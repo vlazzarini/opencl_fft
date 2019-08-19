@@ -56,7 +56,29 @@ class Clcfft {
   /** DFT operation (in-place) \n
       c - data array with N complex numbers \n
   */   
-  virtual int transform(std::complex<float> *c);   
+  virtual int transform(std::complex<float> *c);
+
+  /** DFT operation (in-place) \n
+      uses data transferred into device. \n
+      Output needs to be transferred out.
+  */   
+  virtual int transform();
+
+  /** transfer data to device  
+     c - data array with N complex numbers (as N*2 floats)
+  */
+  void datain(float *c) {
+    clEnqueueWriteBuffer(commands, data1, CL_TRUE, 0, sizeof(cl_float2)*N,
+                         c, 0, NULL, NULL);
+  }
+
+  /** transfer data from device  
+     c - data array with space for N complex numbers (as N*2 floats)
+  */
+  void dataout(float *c) {
+    clEnqueueReadBuffer(commands, data2, CL_TRUE, 0, sizeof(cl_float2)*N,
+                        c, 0, NULL, NULL);
+  } 
 };
 
 /** Real to Complex FFT class
@@ -99,6 +121,12 @@ class Clrfft : public Clcfft {
     err = transform(c, r);
     return err;
   }
+
+  /** DFT operation (in-place) \n
+      uses data transferred into device. \n
+      Output needs to be transferred out.
+  */   
+  virtual int transform();
 
 };
 

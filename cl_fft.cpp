@@ -212,6 +212,10 @@ Clcfft::transform(std::complex<float> *c) {
   return err;
 }
 
+int Clcfft::transform(){
+  return fft();
+}
+
 Clrfft::Clrfft(cl_device_id device_id, int size, bool fwd) :
   w2(NULL), conv_kernel(NULL), iconv_kernel(NULL), cwgs(size/8),
   iwgs(size/8), Clcfft(device_id, size/2, fwd) {
@@ -295,6 +299,29 @@ Clrfft::transform(std::complex<float> *c, float *r){
   }
   return err;
 }
+
+int Clrfft::transform() {
+   int err;
+   size_t threads = N >> 1;
+   if(forward) {
+    fft();
+    err = clEnqueueNDRangeKernel(commands, conv_kernel,1, NULL, &threads,
+                                 &cwgs, 0, NULL, NULL);
+    std::cout << "failed to run conv kernel" <<
+        cl_error_string(err) << std::endl;
+   } else {
+    err = clEnqueueNDRangeKernel(commands, iconv_kernel,1, NULL, &threads,
+                                 &iwgs, 0, NULL, NULL);
+    if(err)
+      std::cout << "failed to run iconv kernel" <<
+        cl_error_string(err) << std::endl;
+    fft();
+   }
+   clFinish(commands);
+   return err;
+}
+
+
 
 const char * cl_error_string(int err) {
   switch (err) {

@@ -39,8 +39,7 @@ int main() {
   Clcfft idft(device_ids[1],N,false);
   
   std::vector<std::complex<float>> sig(N);
-
-   
+  
   for(int i = 0; i < N; i++){
     sig[i].real(sin(i*2*PI/N));
   }

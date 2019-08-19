@@ -41,6 +41,7 @@ int main() {
   std::vector<float> sig(N);
    
   for(int i = 0; i < N; i++){
+    // dc + fund + nyq
     sig[i] = 0.5 + sin(i*2*PI/N) + 0.5*cos(i*PI);
   }
 

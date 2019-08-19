@@ -27,6 +27,11 @@ inline cmplx conjg(cmplx a) {
 inline cmplx rot(cmplx a) {
    return (cmplx) (-a.y, a.x);
 }
+/* reorder kernel */
+kernel void reorder(global cmplx *out, global cmplx *in, global const int *b) {
+   int k = get_global_id(0);
+   out[k] = in[b[k]];     
+}
 /* fft kernel */
 kernel void fft(global cmplx *s, global const cmplx *w, int N, int n2, int fwd) {
  int k, i, m, n;
@@ -67,8 +72,8 @@ kernel void iconv(global cmplx *c, global const cmplx *w, int N) {
 )";
 
 Clcfft::Clcfft(cl_device_id device_id, int size, bool fwd) :
-  N(size), forward(fwd), w(NULL), data(NULL), context(NULL),
-  commands(NULL), program(NULL), fft_kernel(NULL), wgs(size/4) {
+  N(size), forward(fwd), w(NULL), b(NULL), data1(NULL), data2(NULL), context(NULL),
+  commands(NULL), program(NULL), fft_kernel(NULL), reorder_kernel(NULL), wgs(size/4) {
 
   int err;
   context = clCreateContext(0, 1, &device_id, NULL, NULL, &err);
@@ -89,29 +94,55 @@ Clcfft::Clcfft(cl_device_id device_id, int size, bool fwd) :
           clReleaseContext(context);
           return;
         }
-        fft_kernel = clCreateKernel(program, "fft", &err);
+        fft_kernel = clCreateKernel(program, "fft", &err);;
         clGetKernelWorkGroupInfo(fft_kernel,
                                  device_id, CL_KERNEL_WORK_GROUP_SIZE, 
                                  sizeof(wgs), &wgs, NULL);
         if(wgs > N/2) wgs = N/2;
-        data = clCreateBuffer(context,0, N*sizeof(cl_float2), NULL, NULL);
+
+        reorder_kernel = clCreateKernel(program, "reorder", &err);
+        clGetKernelWorkGroupInfo(reorder_kernel,
+                                 device_id, CL_KERNEL_WORK_GROUP_SIZE, 
+                                 sizeof(rwgs), &rwgs, NULL);
+        if(rwgs > N) rwgs = N;
+          
+        data1 = clCreateBuffer(context,0, N*sizeof(cl_float2), NULL, NULL);
+        data2 = clCreateBuffer(context,0, N*sizeof(cl_float2), NULL, NULL);
         w = clCreateBuffer(context, CL_MEM_READ_ONLY, N*sizeof(cl_float2), NULL,
                            NULL);
-
+        b = clCreateBuffer(context, CL_MEM_READ_ONLY, N*sizeof(cl_int), NULL,
+                           NULL);
+        
         std::vector<std::complex<float>> wp(N);
         for(int i= 0; i < N; i++) {
           float sign = forward ? -1.f : 1.f;
           wp[i].real(cos(i*2*PI/N));
           wp[i].imag(sign*sin(i*2*PI/N));
         }
-
-        clEnqueueWriteBuffer(commands, w, CL_TRUE, 0, sizeof(cl_float2)*N,
+       clEnqueueWriteBuffer(commands, w, CL_TRUE, 0, sizeof(cl_float2)*N,
                              (const void *) wp.data(), 0, NULL, NULL);
+       
+        std::vector<int> bp(N);
+        for(int i = 0; i < N; i++) bp[i] = i;
+        for(int i = 1, n = N/2; i < N; i = i << 1, n = n >> 1)
+          for(int j = 0; j < i; j++)
+            bp[i+j] = bp[j] + n;
+
+        for(int i = 0; i < N; i++) std::cout << bp[i] <<  " ";
+        std::cout << std::endl;
+        clEnqueueWriteBuffer(commands, b, CL_TRUE, 0, sizeof(cl_int)*N,
+                             (const void *) bp.data(), 0, NULL, NULL); 
+
+
         int fwd = forward ? 1 :  0;
-        clSetKernelArg(fft_kernel, 0, sizeof(cl_mem), &data);
+        clSetKernelArg(reorder_kernel, 0, sizeof(cl_mem), &data2);
+        clSetKernelArg(reorder_kernel, 1, sizeof(cl_mem), &data1);
+        clSetKernelArg(reorder_kernel, 2, sizeof(cl_mem), &b);
+        clSetKernelArg(fft_kernel, 0, sizeof(cl_mem), &data2);
         clSetKernelArg(fft_kernel, 1, sizeof(cl_mem), &w);
         clSetKernelArg(fft_kernel, 2, sizeof(cl_int), &N);
         clSetKernelArg(fft_kernel, 4, sizeof(cl_int), &fwd);
+        
         return;
       }
       // program not created
@@ -131,21 +162,45 @@ Clcfft::Clcfft(cl_device_id device_id, int size, bool fwd) :
 
 Clcfft::~Clcfft() {
   clReleaseMemObject(w);
-  clReleaseMemObject(data);
+  clReleaseMemObject(b);
+  clReleaseMemObject(data1);
+  clReleaseMemObject(data2);
   clReleaseKernel(fft_kernel);
+  clReleaseKernel(reorder_kernel);
   clReleaseProgram(program);
   clReleaseCommandQueue(commands);
   clReleaseContext(context);
 }
 
+int Clcfft::fft() {
+    int err;
+    size_t threads = N;
+    err = clEnqueueNDRangeKernel(commands, reorder_kernel,1, NULL, &threads,
+                                   &rwgs, 0, NULL, NULL);
+    if(err)
+        std::cout << "failed to run reorder kernel" <<
+          cl_error_string(err) << std::endl;
+    for (int n = 1; n < N; n *= 2) {
+      int n2 = n << 1;
+      threads = N >> 1;
+      clSetKernelArg(fft_kernel, 3, sizeof(cl_int), &n2);
+      err = clEnqueueNDRangeKernel(commands, fft_kernel,1, NULL, &threads,
+                                   &wgs, 0, NULL, NULL);
+      if(err)
+        std::cout << "failed to run fft kernel" <<
+          cl_error_string(err) << std::endl;
+      clFinish(commands);
+    }
+    return err;
+  }
+
 int
 Clcfft::transform(std::complex<float> *c) {
   int err;
-  reorder(c);
-  clEnqueueWriteBuffer(commands, data, CL_TRUE, 0, sizeof(cl_float2)*N,
+  clEnqueueWriteBuffer(commands, data1, CL_TRUE, 0, sizeof(cl_float2)*N,
                        c, 0, NULL, NULL);
-  err = fft(c);
-  clEnqueueReadBuffer(commands, data, CL_TRUE, 0, sizeof(cl_float2)*N,
+  err = fft();
+  clEnqueueReadBuffer(commands, data2, CL_TRUE, 0, sizeof(cl_float2)*N,
                       c, 0, NULL, NULL);
   return err;
 }
@@ -178,10 +233,10 @@ Clrfft::Clrfft(cl_device_id device_id, int size, bool fwd) :
                            sizeof(wgs), &iwgs, NULL);
   if(iwgs > N/2) iwgs = N/2;
   
-  clSetKernelArg(conv_kernel, 0, sizeof(cl_mem), &data);
+  clSetKernelArg(conv_kernel, 0, sizeof(cl_mem), &data2);
   clSetKernelArg(conv_kernel, 1, sizeof(cl_mem), &w2);
   clSetKernelArg(conv_kernel, 2, sizeof(cl_int), &N);
-  clSetKernelArg(iconv_kernel, 0, sizeof(cl_mem), &data);
+  clSetKernelArg(iconv_kernel, 0, sizeof(cl_mem), &data1);
   clSetKernelArg(iconv_kernel, 1, sizeof(cl_mem), &w2);
   clSetKernelArg(iconv_kernel, 2, sizeof(cl_int), &N); 
 }
@@ -202,10 +257,9 @@ Clrfft::transform(std::complex<float> *c, float *r){
   if(forward) {
     if (s != r)
       std::copy(r, r + 2 * N, s);
-    reorder(c);
-    clEnqueueWriteBuffer(commands, data, CL_TRUE, 0, sizeof(cl_float2)*N,
+    clEnqueueWriteBuffer(commands, data1, CL_TRUE, 0, sizeof(cl_float2)*N,
                          c, 0, NULL, NULL);
-    fft(c);
+    fft();
     size_t threads = N >> 1;
     err = clEnqueueNDRangeKernel(commands, conv_kernel,1, NULL, &threads,
                                  &cwgs, 0, NULL, NULL);
@@ -213,7 +267,7 @@ Clrfft::transform(std::complex<float> *c, float *r){
       std::cout << "failed to run conv kernel" <<
         cl_error_string(err) << std::endl;
     clFinish(commands);
-    clEnqueueReadBuffer(commands, data, CL_TRUE, 0, sizeof(cl_float2)*N,
+    clEnqueueReadBuffer(commands, data2, CL_TRUE, 0, sizeof(cl_float2)*N,
                         c, 0, NULL, NULL);
     zro = c[0].real() + c[0].imag();
     nyq = c[0].real() - c[0].imag();
@@ -221,7 +275,7 @@ Clrfft::transform(std::complex<float> *c, float *r){
   } else {
     zro = c[0].real() * 2., nyq = c[0].imag() * 2.;
     c[0].real(zro + nyq), c[0].imag(zro - nyq);
-    clEnqueueWriteBuffer(commands, data, CL_TRUE, 0, sizeof(cl_float2)*N,
+    clEnqueueWriteBuffer(commands, data1, CL_TRUE, 0, sizeof(cl_float2)*N,
                          c, 0, NULL, NULL);
     size_t threads = N >> 1;
     err = clEnqueueNDRangeKernel(commands, iconv_kernel,1, NULL, &threads,
@@ -230,13 +284,8 @@ Clrfft::transform(std::complex<float> *c, float *r){
       std::cout << "failed to run iconv kernel" <<
         cl_error_string(err) << std::endl;
     clFinish(commands);
-    clEnqueueReadBuffer(commands, data, CL_TRUE, 0, sizeof(cl_float2)*N,
-                        c, 0, NULL, NULL);
-    reorder(c);
-    clEnqueueWriteBuffer(commands, data, CL_TRUE, 0, sizeof(cl_float2)*N,
-                         c, 0, NULL, NULL);
-    fft(c);
-    clEnqueueReadBuffer(commands, data, CL_TRUE, 0, sizeof(cl_float2)*N,
+    fft();
+    clEnqueueReadBuffer(commands, data2, CL_TRUE, 0, sizeof(cl_float2)*N,
     c, 0, NULL, NULL);
     if (s != r)
       std::copy(s, s + 2 * N, r);

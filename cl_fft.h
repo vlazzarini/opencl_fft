@@ -29,46 +29,17 @@ class Clcfft {
  protected:
   int N;
   bool forward;
-  cl_mem w, data;
+  cl_mem w, b, data1, data2;
   cl_context context;
   cl_command_queue commands;
   cl_program program;
-  cl_kernel fft_kernel;
-  size_t wgs;
+  cl_kernel fft_kernel, reorder_kernel;
+  size_t wgs, rwgs;
   char log[2048];
   size_t  llen;
 
-  int fft(std::complex<float> *c) {
-    int err;
-    for (int n = 1; n < N; n *= 2) {
-      int n2 = n << 1;
-      size_t threads = N >> 1;
-      clSetKernelArg(fft_kernel, 3, sizeof(cl_int), &n2);
-      err = clEnqueueNDRangeKernel(commands, fft_kernel,1, NULL, &threads,
-                                   &wgs, 0, NULL, NULL);
-      if(err)
-        std::cout << "failed to run fft kernel" <<
-          cl_error_string(err) << std::endl;
-      clFinish(commands);
-    }
-    return err;
-  }
-
-  void reorder(std::complex<float> *s) {
-    uint32_t j = 0, m;
-    for (uint32_t i = 0; i < N; i++) {
-      if (j > i) {
-        std::swap(s[i], s[j]);
-      }
-      m = N / 2;
-      while (m >= 2 && j >= m) {
-        j -= m;
-        m /= 2;
-      }
-      j += m;
-    }
-  }
-
+  int fft();
+  
  public:
 
   /** Constructor \n

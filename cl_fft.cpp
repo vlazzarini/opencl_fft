@@ -135,8 +135,6 @@ Clcfft::Clcfft(cl_device_id device_id, int size, bool fwd) :
           for(int j = 0; j < i; j++)
             bp[i+j] = bp[j] + n;
 
-        for(int i = 0; i < N; i++) std::cout << bp[i] <<  " ";
-        std::cout << std::endl;
         clEnqueueWriteBuffer(commands, b, CL_TRUE, 0, sizeof(cl_int)*N,
                              (const void *) bp.data(), 0, NULL, NULL); 
 

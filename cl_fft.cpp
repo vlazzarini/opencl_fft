@@ -152,7 +152,7 @@ Clcfft::transform(std::complex<float> *c) {
 
 Clrfft::Clrfft(cl_device_id device_id, int size, bool fwd) :
   w2(NULL), conv_kernel(NULL), iconv_kernel(NULL), cwgs(size/8),
-  iwgs(size/8+1), Clcfft(device_id, size/2, fwd) {
+  iwgs(size/8), Clcfft(device_id, size/2, fwd) {
   int err;
   
   conv_kernel = clCreateKernel(program, "conv", &err);
@@ -176,7 +176,7 @@ Clrfft::Clrfft(cl_device_id device_id, int size, bool fwd) :
   clGetKernelWorkGroupInfo(iconv_kernel,
                            device_id, CL_KERNEL_WORK_GROUP_SIZE, 
                            sizeof(wgs), &iwgs, NULL);
-  if(iwgs > N/2+1) iwgs = N/2+1;
+  if(iwgs > N/2) iwgs = N/2;
   
   clSetKernelArg(conv_kernel, 0, sizeof(cl_mem), &data);
   clSetKernelArg(conv_kernel, 1, sizeof(cl_mem), &w2);
@@ -223,7 +223,7 @@ Clrfft::transform(std::complex<float> *c, float *r){
     c[0].real(zro + nyq), c[0].imag(zro - nyq);
     clEnqueueWriteBuffer(commands, data, CL_TRUE, 0, sizeof(cl_float2)*N,
                          c, 0, NULL, NULL);
-    size_t threads = (N >> 1) + 1;
+    size_t threads = N >> 1;
     err = clEnqueueNDRangeKernel(commands, iconv_kernel,1, NULL, &threads,
                                  &iwgs, 0, NULL, NULL);
     if(err)

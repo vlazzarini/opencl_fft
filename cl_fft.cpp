@@ -49,9 +49,13 @@ kernel void fft(global cmplx *s, global const cmplx *w, int N, int n2, int fwd) 
 /* conversion kernels */
 kernel void conv(global cmplx *c, global const cmplx *w, int N) {
   int i = get_global_id(0);
-  if(!i) return;
   int j = N - i;
+  float re = c[0].x, im = c[0].y;
   cmplx e, o, cj = conjg(c[j]), p;
+  if(!i) {
+   c[0] = (cmplx) ((re + im)*.5f, (re - im)*.5f);
+   return;
+  }
   e = .5f*(c[i] + cj);
   o = .5f*rot(cj - c[i]);
   p = prod(w[i], o); 
@@ -60,9 +64,13 @@ kernel void conv(global cmplx *c, global const cmplx *w, int N) {
 }
 kernel void iconv(global cmplx *c, global const cmplx *w, int N) {
   int i = get_global_id(0);
-  if(!i) return; 
   int j = N - i;
-  cmplx e, o, cj = conjg(c[j]), p; 
+  float re = c[0].x, im = c[0].y;
+  cmplx e, o, cj = conjg(c[j]), p;
+  if(!i) {
+   c[0] = (cmplx) ((re + im),(re - im));
+   return; 
+  }
   e = .5f*(c[i] + cj);
   o = .5f*rot(c[i] - cj);
   p = prod(w[i], o);
@@ -112,7 +120,7 @@ Clcfft::Clcfft(cl_device_id device_id, int size, bool fwd) :
                            NULL);
         b = clCreateBuffer(context, CL_MEM_READ_ONLY, N*sizeof(cl_int), NULL,
                            NULL);
-        
+        /* twiddle */ 
         std::vector<std::complex<float>> wp(N);
         for(int i= 0; i < N; i++) {
           float sign = forward ? -1.f : 1.f;
@@ -121,7 +129,8 @@ Clcfft::Clcfft(cl_device_id device_id, int size, bool fwd) :
         }
        clEnqueueWriteBuffer(commands, w, CL_TRUE, 0, sizeof(cl_float2)*N,
                              (const void *) wp.data(), 0, NULL, NULL);
-       
+
+        /* bit-reversed indices */
         std::vector<int> bp(N);
         for(int i = 0; i < N; i++) bp[i] = i;
         for(int i = 1, n = N/2; i < N; i = i << 1, n = n >> 1)
@@ -214,7 +223,8 @@ Clrfft::Clrfft(cl_device_id device_id, int size, bool fwd) :
   iconv_kernel = clCreateKernel(program, "iconv", &err);
   w2 = clCreateBuffer(context, CL_MEM_READ_ONLY, N*sizeof(cl_float2),
                       NULL, NULL);
-  
+
+  /* twiddle */
   std::vector<std::complex<float>> wp(N);
   for(int i=0; i < N; i++) {
     float sign = forward ? -1.f : 1.f;
@@ -269,12 +279,7 @@ Clrfft::transform(std::complex<float> *c, float *r){
     clFinish(commands);
     clEnqueueReadBuffer(commands, data2, CL_TRUE, 0, sizeof(cl_float2)*N,
                         c, 0, NULL, NULL);
-    zro = c[0].real() + c[0].imag();
-    nyq = c[0].real() - c[0].imag();
-    c[0].real(zro * .5), c[0].imag(nyq * .5);
   } else {
-    zro = c[0].real() * 2., nyq = c[0].imag() * 2.;
-    c[0].real(zro + nyq), c[0].imag(zro - nyq);
     clEnqueueWriteBuffer(commands, data1, CL_TRUE, 0, sizeof(cl_float2)*N,
                          c, 0, NULL, NULL);
     size_t threads = N >> 1;
@@ -292,7 +297,6 @@ Clrfft::transform(std::complex<float> *c, float *r){
   }
   return err;
 }
-
 
 const char * cl_error_string(int err) {
   switch (err) {

@@ -40,8 +40,8 @@ int main() {
   std::vector<std::complex<float>> spec(N/2);
   std::vector<float> sig(N);
    
-  for(int i = 0; i < 16; i++){
-    sig[i] = (sin(i*2*PI/16));
+  for(int i = 0; i < N; i++){
+    sig[i] = 0.5+(sin(i*2*PI/N)) + 0.5*cos(i*PI);
   }
 
   std::cout << "in =[";

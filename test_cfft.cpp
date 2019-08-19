@@ -41,8 +41,8 @@ int main() {
   std::vector<std::complex<float>> sig(N);
 
    
-  for(int i = 0; i < 16; i++){
-    sig[i].real(sin(i*2*PI/16));
+  for(int i = 0; i < N; i++){
+    sig[i].real(sin(i*2*PI/N));
   }
 
   std::cout << "in =[";

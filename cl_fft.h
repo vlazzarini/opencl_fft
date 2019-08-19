@@ -46,7 +46,7 @@ class Clcfft {
       device_id - OpenCL device ID \n
       size - DFT size (N) \n
       fwd - direction (true: forward; false: inverse) \n
-   */
+  */
   Clcfft(cl_device_id device_id, int size, bool fwd=true);
   
   /** Destructor
@@ -56,7 +56,7 @@ class Clcfft {
   /** DFT operation (in-place) \n
       c - data array with N complex numbers \n
   */   
-  int transform(std::complex<float> *c);   
+  virtual int transform(std::complex<float> *c);   
 };
 
 /** Real to Complex FFT class
@@ -67,27 +67,38 @@ class Clrfft : public Clcfft {
   cl_kernel conv_kernel, iconv_kernel;
   size_t cwgs, iwgs;
 
-  public:
+ public:
 
   /** Constructor \n
       device_id - OpenCL device ID \n
       size - DFT size (N) \n
       fwd - direction (true: forward; false: inverse) \n
-   */
+  */
   Clrfft(cl_device_id device_id, int size, bool fwd);
 
   /** Destructor
    */
   virtual ~Clrfft();
   
-  /** DFT operation \n
+  /** DFT operation (out-of-place or in-place) \n
       c - data array with N/2 complex numbers \n
       r - data array with N real numbers \n
       Transform is in place if both c and r point to the same memory.\n
       If separate locations are used, r holds input data in forward transform \n
-      and c will contain the output. For inverse, c is input, r is output.
+      and c will contain the output. For inverse, c is input, r is output. \n
   */   
-  int transform(std::complex<float> *c, float *r); 
+  int transform(std::complex<float> *c, float *r);
+
+  /** DFT operation (in-place) \n
+      c - data array (N real points or N/2 complex points, encoded as a \n
+      complex array) \n
+  */   
+  virtual int transform(std::complex<float> *c) {
+    int err;
+    float *r = reinterpret_cast<float *>(c);
+    err = transform(c, r);
+    return err;
+  }
 
 };
 

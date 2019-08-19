@@ -55,6 +55,7 @@ int main() {
   for(int i = 0; i < N/2 - 1; i++) 
     std::cout << spec[i] << ","; 
   std::cout <<  spec[N/2 - 1] << "]" << std::endl;
+  
  idft.transform(spec.data(), sig.data());
 
   std::cout << "out =[";

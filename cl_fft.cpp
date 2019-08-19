@@ -293,6 +293,7 @@ Clrfft::transform(std::complex<float> *c, float *r){
   return err;
 }
 
+
 const char * cl_error_string(int err) {
   switch (err) {
   case CL_SUCCESS:                            return "Success!";

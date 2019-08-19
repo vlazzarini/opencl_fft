@@ -56,6 +56,7 @@ int main() {
   for(int i = 0; i < N - 1; i++) 
     std::cout << sig[i] << ","; 
   std::cout <<  sig[N-1] << "]" << std::endl;
+  
  idft.transform(sig.data());
 
   std::cout << "out =[";

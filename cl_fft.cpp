@@ -49,13 +49,12 @@ kernel void fft(global cmplx *s, global const cmplx *w, int N, int n2, int fwd) 
 /* conversion kernels */
 kernel void conv(global cmplx *c, global const cmplx *w, int N) {
   int i = get_global_id(0);
-  int j = N - i;
-  float re = c[0].x, im = c[0].y;
-  cmplx e, o, cj = conjg(c[j]), p;
   if(!i) {
-   c[0] = (cmplx) ((re + im)*.5f, (re - im)*.5f);
+   c[0] = (cmplx) ((c[0].x + c[0].y)*.5f, (c[0].x - c[0].y)*.5f);
    return;
   }
+  int j = N - i;
+  cmplx e, o, cj = conjg(c[j]), p;
   e = .5f*(c[i] + cj);
   o = .5f*rot(cj - c[i]);
   p = prod(w[i], o); 
@@ -64,13 +63,12 @@ kernel void conv(global cmplx *c, global const cmplx *w, int N) {
 }
 kernel void iconv(global cmplx *c, global const cmplx *w, int N) {
   int i = get_global_id(0);
-  int j = N - i;
-  float re = c[0].x, im = c[0].y;
-  cmplx e, o, cj = conjg(c[j]), p;
   if(!i) {
-   c[0] = (cmplx) ((re + im),(re - im));
+   c[0] = (cmplx) ((c[0].x + c[0].y), (c[0].x - c[0].y));
    return; 
   }
+  int j = N - i;
+  cmplx e, o, cj = conjg(c[j]), p;
   e = .5f*(c[i] + cj);
   o = .5f*rot(c[i] - cj);
   p = prod(w[i], o);

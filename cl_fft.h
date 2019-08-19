@@ -19,14 +19,16 @@
 #endif
 #include <iostream>
 
+namespace cl_fft {
+
 const double PI = 3.141592653589793;
-const char * cl_error_string(int err);
+const char *cl_error_string(int err);
 
 /** Complex to Complex FFT class
  **/
 class Clcfft {
-  
- protected:
+
+protected:
   int N;
   bool forward;
   cl_mem w, b, data1, data2;
@@ -36,49 +38,57 @@ class Clcfft {
   cl_kernel fft_kernel, reorder_kernel;
   size_t wgs, rwgs;
   char log[2048];
-  size_t  llen;
+  size_t llen;
+  int cl_err;
 
   int fft();
-  
- public:
 
+public:
   /** Constructor \n
       device_id - OpenCL device ID \n
       size - DFT size (N) \n
       fwd - direction (true: forward; false: inverse) \n
   */
-  Clcfft(cl_device_id device_id, int size, bool fwd=true);
-  
+  Clcfft(cl_device_id device_id, int size, bool fwd = true);
+
   /** Destructor
    */
   virtual ~Clcfft();
 
   /** DFT operation (in-place) \n
       c - data array with N complex numbers \n
-  */   
+  */
   virtual int transform(std::complex<float> *c);
 
   /** DFT operation (in-place) \n
       uses data transferred into device. \n
       Output needs to be transferred out.
-  */   
+  */
   virtual int transform();
 
-  /** transfer data to device  
-     c - data array with N complex numbers (as N*2 floats)
+  /** transfer data to device
+     c - data array with N complex numbers
   */
-  void datain(float *c) {
-    clEnqueueWriteBuffer(commands, data1, CL_TRUE, 0, sizeof(cl_float2)*N,
-                         c, 0, NULL, NULL);
+  void datain(std::complex<float> *c) {
+    clEnqueueWriteBuffer(commands, data1, CL_TRUE, 0, sizeof(cl_float2) * N, c,
+                         0, NULL, NULL);
   }
 
-  /** transfer data from device  
+  /** transfer data from device
      c - data array with space for N complex numbers (as N*2 floats)
   */
-  void dataout(float *c) {
-    clEnqueueReadBuffer(commands, data2, CL_TRUE, 0, sizeof(cl_float2)*N,
-                        c, 0, NULL, NULL);
-  } 
+  void dataout(std::complex<float> *c) {
+    clEnqueueReadBuffer(commands, data2, CL_TRUE, 0, sizeof(cl_float2) * N, c,
+                        0, NULL, NULL);
+  }
+
+  /** Get setup error code
+   */
+  int get_error() { return cl_err; }
+
+  /** Get compilation log
+   */
+  const char *compile_log() { return (const char *)log; }
 };
 
 /** Real to Complex FFT class
@@ -89,8 +99,7 @@ class Clrfft : public Clcfft {
   cl_kernel conv_kernel, iconv_kernel;
   size_t cwgs, iwgs;
 
- public:
-
+public:
   /** Constructor \n
       device_id - OpenCL device ID \n
       size - DFT size (N) \n
@@ -101,20 +110,20 @@ class Clrfft : public Clcfft {
   /** Destructor
    */
   virtual ~Clrfft();
-  
+
   /** DFT operation (out-of-place or in-place) \n
       c - data array with N/2 complex numbers \n
       r - data array with N real numbers \n
       Transform is in place if both c and r point to the same memory.\n
       If separate locations are used, r holds input data in forward transform \n
       and c will contain the output. For inverse, c is input, r is output. \n
-  */   
+  */
   int transform(std::complex<float> *c, float *r);
 
   /** DFT operation (in-place) \n
       c - data array (N real points or N/2 complex points, encoded as a \n
       complex array) \n
-  */   
+  */
   virtual int transform(std::complex<float> *c) {
     int err;
     float *r = reinterpret_cast<float *>(c);
@@ -125,9 +134,25 @@ class Clrfft : public Clcfft {
   /** DFT operation (in-place) \n
       uses data transferred into device. \n
       Output needs to be transferred out.
-  */   
+  */
   virtual int transform();
 
+  /** transfer data to device
+     r - data array with N real numbers
+  */
+  void datain(float *r) {
+    std::complex<float> *c = reinterpret_cast<std::complex<float> *>(r);
+    Clcfft::datain(c);
+  }
+
+  /** transfer data from device
+     r - data array with space for N real numbers
+  */
+  void dataout(float *r) {
+    std::complex<float> *c = reinterpret_cast<std::complex<float> *>(r);
+    Clcfft::dataout(c);
+  }
 };
+}
 
 #endif

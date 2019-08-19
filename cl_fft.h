@@ -74,7 +74,7 @@ class Clrfft : public Clcfft {
       size - DFT size (N) \n
       fwd - direction (true: forward; false: inverse) \n
    */
-  Clrfft(cl_device_id device_id, int size, bool dir);
+  Clrfft(cl_device_id device_id, int size, bool fwd);
 
   /** Destructor
    */

@@ -60,11 +60,18 @@ public:
   */
   virtual int transform(std::complex<float> *c);
 
-  /** DFT operation (in-place) \n
+  /** DFT operation \n
       uses data transferred into device. \n
       Output needs to be transferred out.
   */
   virtual int transform();
+
+
+  /** DFT operation (out-of-place) \n
+      out - output data array (on device)
+      in - input data array (on device)
+  */
+  virtual int transform(cl_mem *out, cl_mem *in);
 
   /** transfer data to device
      c - data array with N complex numbers
@@ -131,11 +138,17 @@ public:
     return err;
   }
 
-  /** DFT operation (in-place) \n
+  /** DFT operation  \n
       uses data transferred into device. \n
       Output needs to be transferred out.
   */
   virtual int transform();
+
+  /** DFT operation (out-of-place) \n
+      out - output data array (on device)
+      in - input data array (on device)
+  */
+  virtual int transform(cl_mem *out, cl_mem *in);
 
   /** transfer data to device
      r - data array with N real numbers

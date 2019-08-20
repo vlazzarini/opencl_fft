@@ -201,6 +201,13 @@ int Clcfft::transform(std::complex<float> *c) {
 
 int Clcfft::transform() { return fft(); }
 
+int Clcfft::transform(cl_mem *out, cl_mem *in) {
+  clSetKernelArg(reorder_kernel, 0, sizeof(cl_mem), &out);
+  clSetKernelArg(reorder_kernel, 1, sizeof(cl_mem), &in);
+  clSetKernelArg(fft_kernel, 0, sizeof(cl_mem), &out);
+  return fft();
+}
+
 Clrfft::Clrfft(cl_device_id device_id, int size, bool fwd)
     : w2(NULL), conv_kernel(NULL), iconv_kernel(NULL), cwgs(size / 8),
       iwgs(size / 8), Clcfft(device_id, size / 2, fwd) {
@@ -293,6 +300,16 @@ int Clrfft::transform() {
   return err;
 }
 
+int Clrfft::transform(cl_mem *out, cl_mem *in) {
+  clSetKernelArg(reorder_kernel, 0, sizeof(cl_mem), &out);
+  clSetKernelArg(reorder_kernel, 1, sizeof(cl_mem), &in);
+  clSetKernelArg(fft_kernel, 0, sizeof(cl_mem), &out);
+  clSetKernelArg(conv_kernel, 0, sizeof(cl_mem), &out);
+  clSetKernelArg(iconv_kernel, 0, sizeof(cl_mem), &in);
+  return transform();
+}
+
+  
 const char *cl_error_string(int err) {
   switch (err) {
   case CL_SUCCESS:

@@ -13,20 +13,12 @@
 
 namespace cl_fft {
 
-const char *code = R"(
+const char *fft_code = R"(
 /* complex type */
 typedef float2 cmplx;
 /* complex product */
 inline cmplx prod(cmplx a, cmplx b){
      return (cmplx)(a.x*b.x - a.y*b.y, a.x*b.y + a.y*b.x); 
-}
-/* complex conj */
-inline cmplx conjg(cmplx a) {
-    return (cmplx) (a.x, - a.y);
-}
-/* rotation by pi */
-inline cmplx rot(cmplx a) {
-   return (cmplx) (-a.y, a.x);
 }
 /* reorder kernel */
 kernel void reorder(global cmplx *out, global cmplx *in, global const int *b) {
@@ -47,36 +39,9 @@ kernel void fft(global cmplx *s, global const cmplx *w, int N, int n2, int fwd) 
  s[k] = n2 == N && fwd ? (e + o)/N :  e + o;
  s[i] = n2 == N && fwd ? (e - o)/N :  e - o; 
 }
-/* conversion kernels */
-kernel void conv(global cmplx *c, global const cmplx *w, int N) {
-  int i = get_global_id(0);
-  if(!i) {
-   c[0] = (cmplx) ((c[0].x + c[0].y)*.5f, (c[0].x - c[0].y)*.5f);
-   return;
-  }
-  int j = N - i;
-  cmplx e, o, cj = conjg(c[j]), p;
-  e = .5f*(c[i] + cj);
-  o = .5f*rot(cj - c[i]);
-  p = prod(w[i], o); 
-  c[i] = e + p;
-  c[j] = conjg(e - p);
-}
-kernel void iconv(global cmplx *c, global const cmplx *w, int N) {
-  int i = get_global_id(0);
-  if(!i) {
-   c[0] = (cmplx) ((c[0].x + c[0].y), (c[0].x - c[0].y));
-   return; 
-  }
-  int j = N - i;
-  cmplx e, o, cj = conjg(c[j]), p;
-  e = .5f*(c[i] + cj);
-  o = .5f*rot(c[i] - cj);
-  p = prod(w[i], o);
-  c[i] = e + p;
-  c[j] = conjg(e - p); 
-}
 )";
+  
+
 
 Clcfft::Clcfft(cl_device_id device_id, int size, bool fwd)
     : N(size), forward(fwd), w(NULL), b(NULL), data1(NULL), data2(NULL),
@@ -87,20 +52,19 @@ Clcfft::Clcfft(cl_device_id device_id, int size, bool fwd)
   if (context) {
     commands = clCreateCommandQueue(context, device_id, 0, &cl_err);
     if (commands) {
-      program = clCreateProgramWithSource(context, 1, (const char **)&code,
+      program = clCreateProgramWithSource(context, 1, (const char **)&fft_code,
                                           NULL, &cl_err);
       if (program) {
         cl_err = clBuildProgram(program, 0, NULL, NULL, NULL, NULL);
         if (cl_err) {
           clGetProgramBuildInfo(program, device_id, CL_PROGRAM_BUILD_LOG,
                                 sizeof(log), log, &llen);
-          clReleaseProgram(program);
           clReleaseCommandQueue(commands);
           clReleaseContext(context);
           return;
         }
         fft_kernel = clCreateKernel(program, "fft", &cl_err);
-        ;
+        
         clGetKernelWorkGroupInfo(fft_kernel, device_id,
                                  CL_KERNEL_WORK_GROUP_SIZE, sizeof(wgs), &wgs,
                                  NULL);
@@ -150,6 +114,7 @@ Clcfft::Clcfft(cl_device_id device_id, int size, bool fwd)
         clSetKernelArg(fft_kernel, 2, sizeof(cl_int), &N);
         clSetKernelArg(fft_kernel, 4, sizeof(cl_int), &fwd);
 
+        clReleaseProgram(program);
         return;
       }
       // program not created
@@ -168,7 +133,6 @@ Clcfft::~Clcfft() {
   clReleaseMemObject(data2);
   clReleaseKernel(fft_kernel);
   clReleaseKernel(reorder_kernel);
-  clReleaseProgram(program);
   clReleaseCommandQueue(commands);
   clReleaseContext(context);
 }
@@ -208,11 +172,71 @@ int Clcfft::transform(cl_mem *out, cl_mem *in) {
   return fft();
 }
 
+const char *conv_code = R"(
+/* complex type */
+typedef float2 cmplx;
+/* complex product */
+inline cmplx prod(cmplx a, cmplx b){
+     return (cmplx)(a.x*b.x - a.y*b.y, a.x*b.y + a.y*b.x); 
+}
+/* complex conj */
+inline cmplx conjg(cmplx a) {
+    return (cmplx) (a.x, - a.y);
+}
+/* rotation by pi */
+inline cmplx rot(cmplx a) {
+   return (cmplx) (-a.y, a.x);
+}  
+/* conversion kernels */
+kernel void conv(global cmplx *c, global const cmplx *w, int N) {
+  int i = get_global_id(0);
+  if(!i) {
+   c[0] = (cmplx) ((c[0].x + c[0].y)*.5f, (c[0].x - c[0].y)*.5f);
+   return;
+  }
+  int j = N - i;
+  cmplx e, o, cj = conjg(c[j]), p;
+  e = .5f*(c[i] + cj);
+  o = .5f*rot(cj - c[i]);
+  p = prod(w[i], o); 
+  c[i] = e + p;
+  c[j] = conjg(e - p);
+}
+kernel void iconv(global cmplx *c, global const cmplx *w, int N) {
+  int i = get_global_id(0);
+  if(!i) {
+   c[0] = (cmplx) ((c[0].x + c[0].y), (c[0].x - c[0].y));
+   return; 
+  }
+  int j = N - i;
+  cmplx e, o, cj = conjg(c[j]), p;
+  e = .5f*(c[i] + cj);
+  o = .5f*rot(c[i] - cj);
+  p = prod(w[i], o);
+  c[i] = e + p;
+  c[j] = conjg(e - p); 
+}
+)";
+
 Clrfft::Clrfft(cl_device_id device_id, int size, bool fwd)
     : w2(NULL), conv_kernel(NULL), iconv_kernel(NULL), cwgs(size / 8),
       iwgs(size / 8), Clcfft(device_id, size / 2, fwd) {
   int err;
 
+  program = clCreateProgramWithSource(context, 1, (const char **)&conv_code,
+                                          NULL, &cl_err);
+  if (program) {
+    cl_err = clBuildProgram(program, 0, NULL, NULL, NULL, NULL);
+       if (cl_err) {
+          clGetProgramBuildInfo(program, device_id, CL_PROGRAM_BUILD_LOG,
+                                sizeof(log), log, &llen);
+          clReleaseProgram(program);
+          clReleaseCommandQueue(commands);
+          clReleaseContext(context);
+          return;
+    }
+  }
+  
   conv_kernel = clCreateKernel(program, "conv", &err);
   iconv_kernel = clCreateKernel(program, "iconv", &err);
   w2 = clCreateBuffer(context, CL_MEM_READ_ONLY, N * sizeof(cl_float2), NULL,
@@ -225,6 +249,7 @@ Clrfft::Clrfft(cl_device_id device_id, int size, bool fwd)
     wp[i].real(cos(i * PI / N));
     wp[i].imag(sign * sin(i * PI / N));
   }
+
   clEnqueueWriteBuffer(commands, w2, CL_TRUE, 0, sizeof(cl_float2) * N,
                        (const void *)wp.data(), 0, NULL, NULL);
 
@@ -243,6 +268,7 @@ Clrfft::Clrfft(cl_device_id device_id, int size, bool fwd)
   clSetKernelArg(iconv_kernel, 0, sizeof(cl_mem), &data1);
   clSetKernelArg(iconv_kernel, 1, sizeof(cl_mem), &w2);
   clSetKernelArg(iconv_kernel, 2, sizeof(cl_int), &N);
+  clReleaseProgram(program);
 }
 
 Clrfft::~Clrfft() {

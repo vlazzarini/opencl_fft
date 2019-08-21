@@ -40,8 +40,6 @@ kernel void fft(global cmplx *s, global const cmplx *w, int N, int n2, int fwd) 
  s[i] = n2 == N && fwd ? (e - o)/N :  e - o; 
 }
 )";
-  
-
 
 Clcfft::Clcfft(cl_device_id device_id, int size, bool fwd)
     : N(size), forward(fwd), w(NULL), b(NULL), data1(NULL), data2(NULL),
@@ -64,7 +62,7 @@ Clcfft::Clcfft(cl_device_id device_id, int size, bool fwd)
           return;
         }
         fft_kernel = clCreateKernel(program, "fft", &cl_err);
-        
+
         clGetKernelWorkGroupInfo(fft_kernel, device_id,
                                  CL_KERNEL_WORK_GROUP_SIZE, sizeof(wgs), &wgs,
                                  NULL);
@@ -163,15 +161,6 @@ int Clcfft::transform(std::complex<float> *c) {
   return err;
 }
 
-int Clcfft::transform() { return fft(); }
-
-int Clcfft::transform(cl_mem *out, cl_mem *in) {
-  clSetKernelArg(reorder_kernel, 0, sizeof(cl_mem), &out);
-  clSetKernelArg(reorder_kernel, 1, sizeof(cl_mem), &in);
-  clSetKernelArg(fft_kernel, 0, sizeof(cl_mem), &out);
-  return fft();
-}
-
 const char *conv_code = R"(
 /* complex type */
 typedef float2 cmplx;
@@ -224,19 +213,19 @@ Clrfft::Clrfft(cl_device_id device_id, int size, bool fwd)
   int err;
 
   program = clCreateProgramWithSource(context, 1, (const char **)&conv_code,
-                                          NULL, &cl_err);
+                                      NULL, &cl_err);
   if (program) {
     cl_err = clBuildProgram(program, 0, NULL, NULL, NULL, NULL);
-       if (cl_err) {
-          clGetProgramBuildInfo(program, device_id, CL_PROGRAM_BUILD_LOG,
-                                sizeof(log), log, &llen);
-          clReleaseProgram(program);
-          clReleaseCommandQueue(commands);
-          clReleaseContext(context);
-          return;
+    if (cl_err) {
+      clGetProgramBuildInfo(program, device_id, CL_PROGRAM_BUILD_LOG,
+                            sizeof(log), log, &llen);
+      clReleaseProgram(program);
+      clReleaseCommandQueue(commands);
+      clReleaseContext(context);
+      return;
     }
   }
-  
+
   conv_kernel = clCreateKernel(program, "conv", &err);
   iconv_kernel = clCreateKernel(program, "iconv", &err);
   w2 = clCreateBuffer(context, CL_MEM_READ_ONLY, N * sizeof(cl_float2), NULL,
@@ -310,32 +299,6 @@ int Clrfft::transform(std::complex<float> *c, float *r) {
   return err;
 }
 
-int Clrfft::transform() {
-  int err;
-  size_t threads = N >> 1;
-  if (forward) {
-    fft();
-    err = clEnqueueNDRangeKernel(commands, conv_kernel, 1, NULL, &threads,
-                                 &cwgs, 0, NULL, NULL);
-  } else {
-    err = clEnqueueNDRangeKernel(commands, iconv_kernel, 1, NULL, &threads,
-                                 &iwgs, 0, NULL, NULL);
-    fft();
-  }
-  clFinish(commands);
-  return err;
-}
-
-int Clrfft::transform(cl_mem *out, cl_mem *in) {
-  clSetKernelArg(reorder_kernel, 0, sizeof(cl_mem), &out);
-  clSetKernelArg(reorder_kernel, 1, sizeof(cl_mem), &in);
-  clSetKernelArg(fft_kernel, 0, sizeof(cl_mem), &out);
-  clSetKernelArg(conv_kernel, 0, sizeof(cl_mem), &out);
-  clSetKernelArg(iconv_kernel, 0, sizeof(cl_mem), &in);
-  return transform();
-}
-
-  
 const char *cl_error_string(int err) {
   switch (err) {
   case CL_SUCCESS:

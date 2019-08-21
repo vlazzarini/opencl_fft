@@ -60,42 +60,13 @@ public:
   */
   virtual int transform(std::complex<float> *c);
 
-  /** DFT operation \n
-      uses data transferred into device. \n
-      Output needs to be transferred out.
-  */
-  virtual int transform();
-
-
-  /** DFT operation (out-of-place) \n
-      out - output data array (on device)
-      in - input data array (on device)
-  */
-  virtual int transform(cl_mem *out, cl_mem *in);
-
-  /** transfer data to device
-     c - data array with N complex numbers
-  */
-  void datain(std::complex<float> *c) {
-    clEnqueueWriteBuffer(commands, data1, CL_TRUE, 0, sizeof(cl_float2) * N, c,
-                         0, NULL, NULL);
-  }
-
-  /** transfer data from device
-     c - data array with space for N complex numbers (as N*2 floats)
-  */
-  void dataout(std::complex<float> *c) {
-    clEnqueueReadBuffer(commands, data2, CL_TRUE, 0, sizeof(cl_float2) * N, c,
-                        0, NULL, NULL);
-  }
-
   /** Get setup error code
    */
   int get_error() { return cl_err; }
 
   /** Get compilation log
    */
-  const char *compile_log() { return (const char *)log; }
+  const char *get_log() { return (const char *)log; }
 };
 
 /** Real to Complex FFT class
@@ -136,34 +107,6 @@ public:
     float *r = reinterpret_cast<float *>(c);
     err = transform(c, r);
     return err;
-  }
-
-  /** DFT operation  \n
-      uses data transferred into device. \n
-      Output needs to be transferred out.
-  */
-  virtual int transform();
-
-  /** DFT operation (out-of-place) \n
-      out - output data array (on device)
-      in - input data array (on device)
-  */
-  virtual int transform(cl_mem *out, cl_mem *in);
-
-  /** transfer data to device
-     r - data array with N real numbers
-  */
-  void datain(float *r) {
-    std::complex<float> *c = reinterpret_cast<std::complex<float> *>(r);
-    Clcfft::datain(c);
-  }
-
-  /** transfer data from device
-     r - data array with space for N real numbers
-  */
-  void dataout(float *r) {
-    std::complex<float> *c = reinterpret_cast<std::complex<float> *>(r);
-    Clcfft::dataout(c);
   }
 };
 }

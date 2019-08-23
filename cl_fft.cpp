@@ -140,6 +140,7 @@ int Clcfft::fft() {
   size_t threads = N;
   err = clEnqueueNDRangeKernel(commands, reorder_kernel, 1, NULL, &threads,
                                &rwgs, 0, NULL, NULL);
+  clFinish(commands);
   for (int n = 1; n < N; n *= 2) {
     int n2 = n << 1;
     threads = N >> 1;

@@ -13,6 +13,8 @@
 
 namespace cl_conv {
 
+const double PI = 3.141592653589793;
+
   const char *fftcode = R"(
 /* complex type */
 typedef float2 cmplx;

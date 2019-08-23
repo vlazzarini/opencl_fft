@@ -7,4 +7,7 @@ and real-to-complex operations. The main motivation is to provide support
 for the parallelisatio of audio processing operations in OpenCL devices such
 as GPUs, CPUs and accellerators.
 
+The repository includes a complete implementation of fast partitioned
+convolution, based on the FFT code. 
+
 Victor Lazzarini, 2019.

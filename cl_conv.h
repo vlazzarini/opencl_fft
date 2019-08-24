@@ -79,6 +79,16 @@ public:
         partition length)  \n
   */
   int convolution(float *output, float *input);
+  
+  /** Time-varying convolution computation
+      output - output array (partition size samples) \n
+      input1, input2 - input arrays (partition size * 2, but
+        holding only partition size samples, zero-padded to
+        partition length)  \n
+  */  
+  int convolution(float *output, float *input1, float *input2);
+
+  
 
   /** get a recorded error code, CL_SUCCESS if no error was recorded
    */

@@ -13,8 +13,19 @@ gift ftgen 0, 0, 0, 1, "pianoc2.wav", 0,0,1
 instr 1
 ipsize = 512
 idev =  1; /* device number */
-ain mpulse 1, 7
+ain mpulse 0.5, 7
+;ain diskin "fox.wav", 1, 0, 1
 asig clconv ain, gift, ipsize, idev
+  out(asig)
+
+endin
+
+instr 2
+ipsize = 512
+idev =  1; /* device number */
+ain1 diskin "fox.wav", 1, 0, 1
+ain2 diskin "beats.wav", 1, 0, 1
+asig cltvconv ain1, ain2/200, 1, 1, ipsize, filelen("beats.wav")*sr, 1
   out(asig)
 
 endin
@@ -22,7 +33,7 @@ endin
 
 </CsInstruments>
 <CsScore>
-i1 0 10
+i2 0 20
 </CsScore>
 </CsoundSynthesizer>
 

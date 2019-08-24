@@ -55,11 +55,12 @@ struct PConv : Plugin<1, 6> {
     parts = inargs[2];
     size = inargs[5] == 0 ? ir.len() : inargs[5];
     size -= inargs[4];
+    MYFLT _0dbfs = csound->_0dbfs();
     clconv = new cl_conv::Clconv(id, size, parts, err_msg, (void *)csound);
     if (clconv->get_cl_err() == CL_SUCCESS) {
       std::vector<float> coefs(size);
       for (int i = 0; i < size; i++)
-        coefs[i] = ir[i];
+        coefs[i] = ir[i]*_0dbfs;
       if (clconv->push_ir(coefs.data()) == CL_SUCCESS) {
         bufout.allocate(csound, parts);
         bufin.allocate(csound, parts << 1);
@@ -95,7 +96,69 @@ struct PConv : Plugin<1, 6> {
   }
 };
 
+struct TVConv : Plugin<1, 7> {
+  cl_conv::Clconv *clconv;
+  int parts, cnt;
+  csnd::AuxMem<float> bufin1, bufin2, bufout;
+
+  int init() {
+    int size;
+    int err;
+    cl_device_id device_ids[32], id;
+    cl_uint num = 0, nump = 0;
+    char name[128];
+
+    err = clGetDeviceIDs(NULL, CL_DEVICE_TYPE_ALL, 32, device_ids, &num);
+    if (err != CL_SUCCESS) 
+      return csound->init_error("failed to find an OpenCL device!\n");
+    id = device_ids[(int)inargs[6]];
+    clGetDeviceInfo(id, CL_DEVICE_NAME, 128, name, NULL);
+    csound->message("using device: ");
+    csound->message(name);
+    size = inargs[5];
+    parts = inargs[4];
+    clconv = new cl_conv::Clconv(id, size, parts, err_msg, (void *)csound);
+    if (clconv->get_cl_err() == CL_SUCCESS) {
+        bufout.allocate(csound, parts);
+        bufin1.allocate(csound, parts << 1);
+        bufin2.allocate(csound, parts << 1);
+        cnt = 0;
+        csound->plugin_deinit(this);
+        return OK;
+     }
+    delete clconv;
+    return csound->init_error("error initialising opencl object");
+  }
+
+  int deinit() {
+    delete clconv;
+    return OK;
+  }
+
+  int aperf() {
+    AudioSig asig1(this, inargs(0));
+    AudioSig asig2(this, inargs(1));
+    AudioSig aout(this, outargs(0));
+    int frz1 = (int) inargs[2], frz2 = (int) inargs[2];
+    MYFLT _0dbfs = csound->_0dbfs();
+      
+    for (int n = offset; n < nsmps; n++) {
+      bufin1[cnt] = frz1 ? (float) asig1[n]/_0dbfs : bufin1[cnt];
+      bufin2[cnt] = frz1 ? (float) asig2[n]/_0dbfs : bufin2[cnt];
+      aout[n] = (MYFLT)bufout[cnt]*_0dbfs;
+      if (++cnt == parts) {
+        if (clconv->convolution(bufout.data(), bufin1.data(),
+                                bufin2.data()) != CL_SUCCESS)
+          return csound->perf_error("error computing convolution\n", this);
+        cnt = 0;
+      }
+    }
+    return OK;
+  }
+};
+
 void on_load(Csound *csound) {
   plugin<PConv>(csound, "clconv", "a", "aiiioo", csnd::thread::ia);
+  plugin<TVConv>(csound, "cltvconv", "a", "aakkiii", csnd::thread::ia);
 }
 }

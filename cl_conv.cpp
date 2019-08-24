@@ -138,7 +138,7 @@ kernel void convol(global float *out, global const cmplx *in,
 /* sample-by-sample overlap-add operation */
 kernel void olap(global float *buf, global const float *in, int parts){
    int n = get_global_id(0);
-   buf[n] = (in[n] + buf[parts+n])/(parts<<1);
+   buf[n] = (in[n] + buf[parts+n])/parts;
    buf[parts+n] = in[parts+n];
 }
 )";
@@ -342,6 +342,8 @@ kernel void olap(global float *buf, global const float *in, int parts){
     char zro = 0;
     clEnqueueFillBuffer(commands, buff, &zro, 1, 0, sizeof(cl_float2) * bins, 0,
                         NULL, NULL);
+    clEnqueueFillBuffer(commands, coefs, &zro, 1, 0, sizeof(cl_float) * bsize, 0,
+                         NULL, NULL);
   }
 
   Clconv::~Clconv() {
@@ -422,7 +424,6 @@ kernel void olap(global float *buf, global const float *in, int parts){
     for (int i = 0; i < nparts; i++) {
       std::fill(sig.begin(), sig.end(), 0);
       std::copy(ir + i * parts, ir + (i + 1) * parts, sig.begin());
-
       clEnqueueWriteBuffer(commands, fftin, CL_TRUE, 0, bytes, sig.data(), 0,
                            NULL, NULL);
       rfft();
@@ -462,6 +463,17 @@ kernel void olap(global float *buf, global const float *in, int parts){
     return cl_err;
   }
 
+  int Clconv::convolution(float *output, float *input1, float *input2) {
+    size_t bytes = sizeof(cl_float) * N;
+    char zro = 0;
+    clEnqueueWriteBuffer(commands, fftin, CL_TRUE, 0, bytes, input2, 0, NULL,
+                         NULL);
+    rfft(); 
+    clEnqueueCopyBuffer(commands, fftout, coefs, 0, bytes * (nparts - wp - 1),
+                        bytes, 0, NULL, NULL);
+    return convolution(output, input1);
+  }
+    
   const char *Clconv::cl_error_string(int err) {
     switch (err) {
     case CL_SUCCESS:

@@ -12,16 +12,17 @@ instr 1
  idev = p6
  ain1 = diskin:a("beats.wav", 1, 0, 1)
  ain2 = diskin:a("fox.wav", 1, 0, 1)
- if idev < 2 then
+ if idev < 3 then
   asig = cltvconv(ain1,ain2,1,1,iM,iL,idev)
  else
   asig = tvconv(ain1,ain2,1,1,iM,iL)
  endif
-  out(asig)
+  out(asig/900)
 endin
 
 </CsInstruments>
 <CsScore>
+i1 0 100 16 22 2
 </CsScore>
 </CsoundSynthesizer>
 

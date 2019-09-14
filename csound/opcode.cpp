@@ -78,6 +78,7 @@ struct PConv : Plugin<1, 6> {
      }
      delete cldconv;
     } else {
+      std::cout << size << "  " << parts << std::endl;
     clconv = new cl_conv::Clconv(id, size, parts, err_msg, (void *)csound);
     if (clconv->get_cl_err() == CL_SUCCESS) {
       std::vector<float> coefs(size);
@@ -85,7 +86,7 @@ struct PConv : Plugin<1, 6> {
         coefs[i] = ir[i]*_0dbfs;
       if (clconv->push_ir(coefs.data()) == CL_SUCCESS) {
         bufout.allocate(csound, parts);
-        bufin.allocate(csound, parts << 1);
+        bufin.allocate(csound, parts);
         cnt = 0;
         csound->plugin_deinit(this);
         return OK;
@@ -172,8 +173,8 @@ struct TVConv : Plugin<1, 7> {
     clconv = new cl_conv::Clconv(id, size, parts, err_msg, (void *)csound);
     if (clconv->get_cl_err() == CL_SUCCESS) {
         bufout.allocate(csound, parts);
-        bufin1.allocate(csound, parts << 1);
-        bufin2.allocate(csound, parts << 1);
+        bufin1.allocate(csound, parts);
+        bufin2.allocate(csound, parts);
         cnt = 0;
         csound->plugin_deinit(this);
         return OK;
@@ -217,6 +218,7 @@ struct TVConv : Plugin<1, 7> {
           return csound->perf_error("error computing convolution\n", this);
         cnt = 0;
       }
+
     }
     }
     return OK;

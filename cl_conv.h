@@ -27,9 +27,9 @@ const char *cl_string(int err);
 
 class Clconv {
   int N, bins;
-  int bsize, nparts, wp;
+  int bsize, nparts, wp, wp2;
   cl_mem w[2], w2[2], b;
-  cl_mem fftin, fftout;
+  cl_mem specin, specout;
   cl_mem buff, coefs, in;
   cl_context context;
   cl_command_queue commands;
@@ -92,6 +92,10 @@ public:
   /** get a recorded error code, CL_SUCCESS if no error was recorded
    */
   int get_cl_err() { return cl_err; }
+
+  /** FFT test method
+   */
+  int fftest(float *, float *);
 };
 
 class Cldconv {
@@ -120,8 +124,8 @@ public:
       uData - callback user data \n
   */
   Cldconv(cl_device_id device_id, int cvs, int vsize,
-         void (*errs)(std::string s, void *d) = NULL, void *uData = NULL);
-  
+          void (*errs)(std::string s, void *d) = NULL, void *uData = NULL);
+
   ~Cldconv();
 
   /** returns an error string relative to error code err */

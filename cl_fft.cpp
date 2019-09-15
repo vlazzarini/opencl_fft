@@ -140,14 +140,12 @@ int Clcfft::fft() {
   size_t threads = N;
   err = clEnqueueNDRangeKernel(commands, reorder_kernel, 1, NULL, &threads,
                                &rwgs, 0, NULL, NULL);
-  clFinish(commands);
   for (int n = 1; n < N; n *= 2) {
     int n2 = n << 1;
     threads = N >> 1;
     clSetKernelArg(fft_kernel, 3, sizeof(cl_int), &n2);
     err = clEnqueueNDRangeKernel(commands, fft_kernel, 1, NULL, &threads, &wgs,
                                  0, NULL, NULL);
-    clFinish(commands);
   }
   return err;
 }
@@ -161,8 +159,7 @@ int Clcfft::transform(std::complex<float> *c) {
                       NULL, NULL);
   return err;
 }
-
-const char *conv_code = R"(
+const char *r2c_code = R"(
 /* complex type */
 typedef float2 cmplx;
 /* complex product */
@@ -213,7 +210,7 @@ Clrfft::Clrfft(cl_device_id device_id, int size, bool fwd)
       iwgs(size / 8), Clcfft(device_id, size / 2, fwd) {
   int err;
 
-  program = clCreateProgramWithSource(context, 1, (const char **)&conv_code,
+  program = clCreateProgramWithSource(context, 1, (const char **)&r2c_code,
                                       NULL, &cl_err);
   if (program) {
     cl_err = clBuildProgram(program, 0, NULL, NULL, NULL, NULL);
@@ -281,7 +278,6 @@ int Clrfft::transform(std::complex<float> *c, float *r) {
     size_t threads = N >> 1;
     err = clEnqueueNDRangeKernel(commands, conv_kernel, 1, NULL, &threads,
                                  &cwgs, 0, NULL, NULL);
-    clFinish(commands);
     clEnqueueReadBuffer(commands, data2, CL_TRUE, 0, sizeof(cl_float2) * N, c,
                         0, NULL, NULL);
   } else {
@@ -290,7 +286,6 @@ int Clrfft::transform(std::complex<float> *c, float *r) {
     size_t threads = N >> 1;
     err = clEnqueueNDRangeKernel(commands, iconv_kernel, 1, NULL, &threads,
                                  &iwgs, 0, NULL, NULL);
-    clFinish(commands);
     fft();
     clEnqueueReadBuffer(commands, data2, CL_TRUE, 0, sizeof(cl_float2) * N, c,
                         0, NULL, NULL);

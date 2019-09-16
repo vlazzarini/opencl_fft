@@ -22,8 +22,8 @@ endin
 
 instr 2
  ipsize = p5
- icsize = p6
- idev =  p7  
+ idev =  p6
+ icsize = filelen("beats.wav")*sr
  ain1 diskin "fox.wav", 1, 0, 1
  ain2 diskin "beats.wav", 1, 0, 1
  if idev > 2 then
@@ -37,8 +37,8 @@ endin
 
 </CsInstruments>
 <CsScore>
-i1 0 10 0.005 1024 1
-i2 10 10 0.005 1024 32768 1
+i1 0 10 0.005 2048 1
+i2 10 10 0.005 2048 1
 </CsScore>
 </CsoundSynthesizer>
 

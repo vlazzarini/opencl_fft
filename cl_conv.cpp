@@ -1,4 +1,4 @@
-/////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
 // OpenCL Partitioned Convolution implementation
 // Copyright (C) 2019 V Lazzarini
 //
@@ -7,7 +7,7 @@
 // License as published by the Free Software Foundation; either
 // version 3.0 of the License, or (at your option) any later version.
 //
-/////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
 #include "cl_conv.h"
 #include <vector>
 
@@ -47,13 +47,13 @@ inline void AtomicAdd(volatile __global float *source, const float operand) {
        prevVal.intVal, newVal.intVal) != prevVal.intVal);
 }
 /* data reordering */
-inline void rod(global cmplx *out, global cmplx *in, global const int *b) {
+inline void reorder(global cmplx *out, global cmplx *in, global const int *b) {
    int k = get_global_id(0);
    out[k] = in[b[k]]; 
    in[b[k]] = 0.f;
 }
 /* fft stage  */
-inline void dft(global cmplx *s, global const cmplx *w, int N, int n2) {
+inline void fft(global cmplx *s, global const cmplx *w, int N, int n2) {
  int k, i, m, n;
  cmplx e, o;
  k = get_global_id(0)*n2;
@@ -67,7 +67,7 @@ inline void dft(global cmplx *s, global const cmplx *w, int N, int n2) {
  s[i] = e - o;  
 }
 /* rfft conversion */
-inline void rcp(global cmplx *c, global const cmplx *w, int N) {
+inline void r2c(global cmplx *c, global const cmplx *w, int N) {
   int i = get_global_id(0);
   if(!i) {
    c[0] = (cmplx) ((c[0].x + c[0].y)*.5f, (c[0].x - c[0].y)*.5f);
@@ -81,26 +81,32 @@ inline void rcp(global cmplx *c, global const cmplx *w, int N) {
   c[i] = e + p;
   c[j] = conjg(e - p);
 }
-/* TWO of each reorder, fft and r2c kernels for
-   task parallelism
+/* TWO of each reorder, fft and r2c kernels for task parallelism
+   NB: this seems to be required for certain OpenCL implementations,
+   when using the same kernel on two concurrent queues.
+   There is nothing in the documentation indicating one way or another
 */
-kernel void reorder(global cmplx *out, global cmplx *in, global const int *b) {
-   rod(out, in, b);
+kernel void reorder_1(global cmplx *out, global cmplx *in, 
+                      global const int *b, int offs) {
+   reorder(out + offs, in, b);
 }
-kernel void reorder1(global cmplx *out, global cmplx *in, global const int *b) {
-   rod(out, in, b);
+kernel void reorder_2(global cmplx *out, global cmplx *in, 
+                      global const int *b, int offs) {
+   reorder(out + offs, in, b);
 }
-kernel void fft(global cmplx *s, global const cmplx *w, int N, int n2) {
-  dft(s, w, N, n2); 
+kernel void fft_1(global cmplx *s, global const cmplx *w, int N, int n2, 
+                  int offs) {
+  fft(s + offs, w, N, n2); 
 }
-kernel void fft1(global cmplx *s, global const cmplx *w, int N, int n2) {
-  dft(s, w, N, n2); 
+kernel void fft_2(global cmplx *s, global const cmplx *w, int N, int n2, 
+                  int offs) {
+  fft(s + offs, w, N, n2); 
 }
-kernel void r2c(global cmplx *c, global const cmplx *w, int N) {
-  rcp(c, w, N);
+kernel void r2c_1(global cmplx *c, global const cmplx *w, int N, int offs) {
+  r2c(c + offs, w, N);
 }
-kernel void r2c1(global cmplx *c, global const cmplx *w, int N) {
-  rcp(c, w, N);
+kernel void r2c_2(global cmplx *c, global const cmplx *w, int N, int offs) {
+  r2c(c + offs, w, N);
 }
 /* inverse rfft conversion */
 kernel void c2r(global cmplx *c, global const cmplx *w, int N) {
@@ -144,8 +150,9 @@ kernel void olap(global float *buf, global const float *in, int parts){
 )";
 
 /*  kernel dispatch functions */
-inline int reorder(cl_mem *out, cl_mem *in, cl_mem *b,
+inline int reorder(cl_mem *out, cl_mem *in, cl_mem *b, int offs,
                    cl_command_queue commands, cl_kernel kern, size_t threads) {
+  clSetKernelArg(kern, 3, sizeof(cl_int), &offs);
   clSetKernelArg(kern, 2, sizeof(cl_mem), b);
   clSetKernelArg(kern, 1, sizeof(cl_mem), in);
   clSetKernelArg(kern, 0, sizeof(cl_mem), out);
@@ -153,11 +160,12 @@ inline int reorder(cl_mem *out, cl_mem *in, cl_mem *b,
                                 NULL, NULL);
 }
 
-inline int fft(cl_mem *data, cl_mem *w, int bins, cl_command_queue commands,
-               cl_kernel kern, size_t threads) {
+inline int fft(cl_mem *data, cl_mem *w, int bins, int offs,
+               cl_command_queue commands, cl_kernel kern, size_t threads) {
   int cl_err, n2;
   for (int n = 1; n < bins; n *= 2) {
     n2 = n << 1;
+    clSetKernelArg(kern, 4, sizeof(cl_int), &offs);
     clSetKernelArg(kern, 3, sizeof(cl_int), &n2);
     clSetKernelArg(kern, 2, sizeof(cl_int), &bins);
     clSetKernelArg(kern, 1, sizeof(cl_mem), w);
@@ -168,7 +176,18 @@ inline int fft(cl_mem *data, cl_mem *w, int bins, cl_command_queue commands,
   return cl_err;
 }
 
-inline int real_cmplx(cl_mem *data, cl_mem *w, int bins,
+inline int real_cmplx(cl_mem *data, cl_mem *w, int bins, int offs,
+                      cl_command_queue commands, cl_kernel kern,
+                      size_t threads) {
+  clSetKernelArg(kern, 3, sizeof(cl_int), &offs);
+  clSetKernelArg(kern, 2, sizeof(cl_int), &bins);
+  clSetKernelArg(kern, 1, sizeof(cl_mem), w);
+  clSetKernelArg(kern, 0, sizeof(cl_mem), data);
+  return clEnqueueNDRangeKernel(commands, kern, 1, NULL, &threads, NULL, 0,
+                                NULL, NULL);
+}
+
+inline int cmplx_real(cl_mem *data, cl_mem *w, int bins,
                       cl_command_queue commands, cl_kernel kern,
                       size_t threads) {
   clSetKernelArg(kern, 2, sizeof(cl_int), &bins);
@@ -191,8 +210,8 @@ inline int convol(cl_mem *out, cl_mem *in, cl_mem *coefs, int wp, int bins,
                                 NULL, NULL);
 }
 
-inline int olap(cl_mem *out, cl_mem *in, int parts, cl_command_queue commands,
-                cl_kernel kern, size_t threads) {
+inline int ola(cl_mem *out, cl_mem *in, int parts, cl_command_queue commands,
+               cl_kernel kern, size_t threads) {
   clSetKernelArg(kern, 2, sizeof(cl_int), &parts);
   clSetKernelArg(kern, 1, sizeof(cl_mem), in);
   clSetKernelArg(kern, 0, sizeof(cl_mem), out);
@@ -201,31 +220,32 @@ inline int olap(cl_mem *out, cl_mem *in, int parts, cl_command_queue commands,
 }
 
 Clpconv::Clpconv(cl_device_id device_id, int cvs, int pts,
-                 void (*errs)(std::string s, void *d), void *uData, void *in1,
-                 void *in2, void *out)
+                 void (*errs)(std::string s, void *d), void *uData, void *inp1,
+                 void *inp2, void *outp)
     : N(pts << 1), bins(pts), bsize((cvs / pts) * bins), nparts(cvs / pts),
-      wp(0), wp2(nparts - 1), w{NULL, NULL}, w2{NULL, NULL}, b(NULL),
-      specin(NULL), specout(NULL), specin1(NULL), specout1(NULL), buff(NULL),
-      coefs(NULL), in(NULL), context(NULL), commands(NULL), commands1(NULL),
-      program(NULL), fft_kernel(NULL), reorder_kernel(NULL), fft_kernel1(NULL),
-      reorder_kernel1(NULL), r2c_kernel(NULL), r2c_kernel1(NULL),
-      c2r_kernel(NULL), convol_kernel(NULL), olap_kernel(NULL),
+      wp(0), wp2(nparts - 1), w{NULL, NULL}, w2{NULL, NULL}, b(NULL), in1(NULL),
+      in2(NULL), out(NULL), spec1(NULL), spec2(NULL), olap(NULL), context(NULL),
+      commands1(NULL), commands2(NULL), program(NULL), fft_kernel1(NULL),
+      reorder_kernel1(NULL), fft_kernel2(NULL), reorder_kernel2(NULL),
+      r2c_kernel1(NULL), r2c_kernel2(NULL), c2r_kernel(NULL),
+      convol_kernel(NULL), olap_kernel(NULL),
       err(errs == NULL ? this->msg : errs), userData(uData), cl_err(CL_SUCCESS),
-      host_mem(((uintptr_t)in1 & (uintptr_t)in2 & (uintptr_t)out) ? 1 : 0) {
+      host_mem(((uintptr_t)inp1 & (uintptr_t)inp2 & (uintptr_t)out) ? 1 : 0) {
 
   context = clCreateContext(0, 1, &device_id, NULL, NULL, &cl_err);
   if (!context) {
     err(cl_error_string(cl_err), userData);
     return;
   }
-  commands = clCreateCommandQueue(context, device_id, 0, &cl_err);
-  if (!commands) {
+
+  /* two command queues for task parallelism */
+  commands1 = clCreateCommandQueue(context, device_id, 0, &cl_err);
+  if (!commands1) {
     err(cl_error_string(cl_err), userData);
     return;
   }
-
-  commands1 = clCreateCommandQueue(context, device_id, 0, &cl_err);
-  if (!commands1) {
+  commands2 = clCreateCommandQueue(context, device_id, 0, &cl_err);
+  if (!commands2) {
     err(cl_error_string(cl_err), userData);
     return;
   }
@@ -248,25 +268,25 @@ Clpconv::Clpconv(cl_device_id device_id, int cvs, int pts,
     err(log, userData);
     return;
   }
-  reorder_kernel = clCreateKernel(program, "reorder", &cl_err);
-  if (cl_err != 0)
-    err(cl_error_string(cl_err), userData);
-  fft_kernel = clCreateKernel(program, "fft", &cl_err);
-  if (cl_err != 0)
-    err(cl_error_string(cl_err), userData);
-  r2c_kernel = clCreateKernel(program, "r2c", &cl_err);
-  if (cl_err != 0)
-    err(cl_error_string(cl_err), userData);
-  reorder_kernel1 = clCreateKernel(program, "reorder1", &cl_err);
-  if (cl_err != 0)
-    err(cl_error_string(cl_err), userData);
-  fft_kernel1 = clCreateKernel(program, "fft1", &cl_err);
-  if (cl_err != 0)
-    err(cl_error_string(cl_err), userData);
-  r2c_kernel1 = clCreateKernel(program, "r2c1", &cl_err);
-  if (cl_err != 0)
-    err(cl_error_string(cl_err), userData);
 
+  reorder_kernel1 = clCreateKernel(program, "reorder_1", &cl_err);
+  if (cl_err != 0)
+    err(cl_error_string(cl_err), userData);
+  fft_kernel1 = clCreateKernel(program, "fft_1", &cl_err);
+  if (cl_err != 0)
+    err(cl_error_string(cl_err), userData);
+  r2c_kernel1 = clCreateKernel(program, "r2c_1", &cl_err);
+  if (cl_err != 0)
+    err(cl_error_string(cl_err), userData);
+  reorder_kernel2 = clCreateKernel(program, "reorder_2", &cl_err);
+  if (cl_err != 0)
+    err(cl_error_string(cl_err), userData);
+  fft_kernel2 = clCreateKernel(program, "fft_2", &cl_err);
+  if (cl_err != 0)
+    err(cl_error_string(cl_err), userData);
+  r2c_kernel2 = clCreateKernel(program, "r2c_2", &cl_err);
+  if (cl_err != 0)
+    err(cl_error_string(cl_err), userData);
   c2r_kernel = clCreateKernel(program, "c2r", &cl_err);
   if (cl_err != 0)
     err(cl_error_string(cl_err), userData);
@@ -277,13 +297,17 @@ Clpconv::Clpconv(cl_device_id device_id, int cvs, int pts,
   if (cl_err != 0)
     err(cl_error_string(cl_err), userData);
 
-  specout = clCreateBuffer(context, 0, bins * sizeof(cl_float2), NULL, &cl_err);
-  specout1 =
-      clCreateBuffer(context, 0, bins * sizeof(cl_float2), NULL, &cl_err);
-  specin = clCreateBuffer(context, in1 ? CL_MEM_USE_HOST_PTR : 0,
-                          bins * sizeof(cl_float2), in1, &cl_err);
-  specin1 = clCreateBuffer(context, in2 ? CL_MEM_USE_HOST_PTR : 0,
-                           bins * sizeof(cl_float2), in2, &cl_err);
+  in1 = clCreateBuffer(context, in1 ? CL_MEM_USE_HOST_PTR : 0,
+                       bins * sizeof(cl_float2), inp1, &cl_err);
+  in2 = clCreateBuffer(context, in2 ? CL_MEM_USE_HOST_PTR : 0,
+                       bins * sizeof(cl_float2), inp2, &cl_err);
+  olap = clCreateBuffer(context, out ? CL_MEM_USE_HOST_PTR : 0,
+                        bins * sizeof(cl_float2), outp, &cl_err);
+  out = clCreateBuffer(context, 0, bins * sizeof(cl_float2), NULL, &cl_err);
+  spec1 = clCreateBuffer(context, CL_MEM_READ_ONLY, bsize * sizeof(cl_float2),
+                         NULL, &cl_err);
+  spec2 = clCreateBuffer(context, CL_MEM_READ_ONLY, bsize * sizeof(cl_float2),
+                         NULL, &cl_err);
   w[0] = clCreateBuffer(context, CL_MEM_READ_ONLY, bins * sizeof(cl_float2),
                         NULL, &cl_err);
   w[1] = clCreateBuffer(context, CL_MEM_READ_ONLY, bins * sizeof(cl_float2),
@@ -294,39 +318,32 @@ Clpconv::Clpconv(cl_device_id device_id, int cvs, int pts,
                          NULL, &cl_err);
   b = clCreateBuffer(context, CL_MEM_READ_ONLY, bins * sizeof(cl_int), NULL,
                      NULL);
-  coefs = clCreateBuffer(context, CL_MEM_READ_ONLY, bsize * sizeof(cl_float2),
-                         NULL, &cl_err);
-  in = clCreateBuffer(context, CL_MEM_READ_ONLY, bsize * sizeof(cl_float2),
-                      NULL, &cl_err);
-  buff = clCreateBuffer(context, out ? CL_MEM_USE_HOST_PTR : 0,
-                        bins * sizeof(cl_float2), out, &cl_err);
-
   /* twiddle */
   std::vector<std::complex<float>> wd(bins);
   for (int i = 0; i < bins; i++) {
     wd[i].real(cos(i * 2 * PI / bins));
     wd[i].imag(-sin(i * 2 * PI / bins));
   }
-  clEnqueueWriteBuffer(commands, w[0], CL_TRUE, 0, sizeof(cl_float2) * bins,
+  clEnqueueWriteBuffer(commands1, w[0], CL_TRUE, 0, sizeof(cl_float2) * bins,
                        (const void *)wd.data(), 0, NULL, NULL);
   for (int i = 0; i < bins; i++) {
     wd[i].real(cos(i * 2 * PI / bins));
     wd[i].imag(sin(i * 2 * PI / bins));
   }
-  clEnqueueWriteBuffer(commands, w[1], CL_TRUE, 0, sizeof(cl_float2) * bins,
+  clEnqueueWriteBuffer(commands1, w[1], CL_TRUE, 0, sizeof(cl_float2) * bins,
                        (const void *)wd.data(), 0, NULL, NULL);
 
   for (int i = 0; i < bins; i++) {
     wd[i].real(cos(i * PI / bins));
     wd[i].imag(-sin(i * PI / bins));
   }
-  clEnqueueWriteBuffer(commands, w2[0], CL_TRUE, 0, sizeof(cl_float2) * bins,
+  clEnqueueWriteBuffer(commands1, w2[0], CL_TRUE, 0, sizeof(cl_float2) * bins,
                        (const void *)wd.data(), 0, NULL, NULL);
   for (int i = 0; i < bins; i++) {
     wd[i].real(cos(i * PI / bins));
     wd[i].imag(sin(i * PI / bins));
   }
-  clEnqueueWriteBuffer(commands, w2[1], CL_TRUE, 0, sizeof(cl_float2) * bins,
+  clEnqueueWriteBuffer(commands1, w2[1], CL_TRUE, 0, sizeof(cl_float2) * bins,
                        (const void *)wd.data(), 0, NULL, NULL);
 
   /* bit-reversed indices */
@@ -336,19 +353,19 @@ Clpconv::Clpconv(cl_device_id device_id, int cvs, int pts,
   for (int i = 1, n = bins / 2; i<bins; i = i << 1, n = n>> 1)
     for (int j = 0; j < i; j++)
       bp[i + j] = bp[j] + n;
-  clEnqueueWriteBuffer(commands, b, CL_TRUE, 0, sizeof(cl_int) * bins,
+  clEnqueueWriteBuffer(commands1, b, CL_TRUE, 0, sizeof(cl_int) * bins,
                        (const void *)bp.data(), 0, NULL, NULL);
 
   std::vector<float> zeros(bsize * 2, 0);
-  clEnqueueWriteBuffer(commands, buff, CL_TRUE, 0, sizeof(cl_float2) * bins,
+  clEnqueueWriteBuffer(commands1, olap, CL_TRUE, 0, sizeof(cl_float2) * bins,
                        (const void *)zeros.data(), 0, NULL, NULL);
-  clEnqueueWriteBuffer(commands, in, CL_TRUE, 0, sizeof(cl_float2) * bsize,
+  clEnqueueWriteBuffer(commands1, spec1, CL_TRUE, 0, sizeof(cl_float2) * bsize,
                        (const void *)zeros.data(), 0, NULL, NULL);
-  clEnqueueWriteBuffer(commands, coefs, CL_TRUE, 0, sizeof(cl_float2) * bsize,
+  clEnqueueWriteBuffer(commands1, spec2, CL_TRUE, 0, sizeof(cl_float2) * bsize,
                        (const void *)zeros.data(), 0, NULL, NULL);
-  clEnqueueWriteBuffer(commands, specin, CL_TRUE, 0, sizeof(cl_float2) * bins,
+  clEnqueueWriteBuffer(commands1, in1, CL_TRUE, 0, sizeof(cl_float2) * bins,
                        (const void *)zeros.data(), 0, NULL, NULL);
-  clEnqueueWriteBuffer(commands, specin1, CL_TRUE, 0, sizeof(cl_float2) * bins,
+  clEnqueueWriteBuffer(commands1, in2, CL_TRUE, 0, sizeof(cl_float2) * bins,
                        (const void *)zeros.data(), 0, NULL, NULL);
 }
 
@@ -358,24 +375,23 @@ Clpconv::~Clpconv() {
   clReleaseMemObject(w[0]);
   clReleaseMemObject(w[1]);
   clReleaseMemObject(b);
-  clReleaseMemObject(specout);
-  clReleaseMemObject(specin);
-  clReleaseMemObject(specout1);
-  clReleaseMemObject(specin1);
-  clReleaseMemObject(buff);
-  clReleaseMemObject(coefs);
-  clReleaseMemObject(in);
-  clReleaseKernel(fft_kernel);
-  clReleaseKernel(reorder_kernel);
-  clReleaseKernel(r2c_kernel);
+  clReleaseMemObject(out);
+  clReleaseMemObject(in2);
+  clReleaseMemObject(in1);
+  clReleaseMemObject(olap);
+  clReleaseMemObject(spec1);
+  clReleaseMemObject(spec2);
+  clReleaseKernel(fft_kernel2);
+  clReleaseKernel(reorder_kernel2);
+  clReleaseKernel(r2c_kernel2);
   clReleaseKernel(fft_kernel1);
   clReleaseKernel(reorder_kernel1);
   clReleaseKernel(r2c_kernel1);
   clReleaseKernel(c2r_kernel);
   clReleaseKernel(olap_kernel);
   clReleaseKernel(convol_kernel);
-  clReleaseCommandQueue(commands);
   clReleaseCommandQueue(commands1);
+  clReleaseCommandQueue(commands2);
   clReleaseContext(context);
 }
 
@@ -385,22 +401,20 @@ int Clpconv::push_ir(float *ir) {
   int n2;
   for (int i = 0; i < nparts; i++) {
     if (!host_mem)
-      cl_err = clEnqueueWriteBuffer(commands, specin, CL_TRUE, 0, bytes >> 1,
+      cl_err = clEnqueueWriteBuffer(commands1, in2, CL_TRUE, 0, bytes >> 1,
                                     &ir[i * bins], 0, NULL, NULL);
     if (cl_err != CL_SUCCESS)
       return cl_err;
-    cl_err = reorder(&specout, &specin, &b, commands, reorder_kernel, bins);
-    if (cl_err != CL_SUCCESS)
-      return cl_err;
-    cl_err = fft(&specout, &w[0], bins, commands, fft_kernel, bins >> 1);
+    cl_err =
+        reorder(&spec2, &in2, &b, wp2 * bins, commands1, reorder_kernel1, bins);
     if (cl_err != CL_SUCCESS)
       return cl_err;
     cl_err =
-        real_cmplx(&specout, &w2[0], bins, commands, r2c_kernel, bins >> 1);
+        fft(&spec2, &w[0], bins, wp2 * bins, commands1, fft_kernel1, bins >> 1);
     if (cl_err != CL_SUCCESS)
       return cl_err;
-    cl_err = clEnqueueCopyBuffer(commands, specout, coefs, 0, bytes * wp2,
-                                 bytes, 0, NULL, NULL);
+    cl_err = real_cmplx(&spec2, &w2[0], bins, wp2 * bins, commands1,
+                        r2c_kernel1, bins >> 1);
     if (cl_err != CL_SUCCESS)
       return cl_err;
     wp2 = wp2 == 0 ? nparts - 1 : wp2 - 1;
@@ -413,106 +427,103 @@ int Clpconv::convolution(float *output, float *input) {
   size_t bytes = sizeof(cl_float2) * bins;
   char zro = 0;
   if (!host_mem)
-    cl_err = clEnqueueWriteBuffer(commands, specin, CL_TRUE, 0, bytes >> 1,
-                                  input, 0, NULL, NULL);
+    cl_err = clEnqueueWriteBuffer(commands1, in1, 0, 0, bytes >> 1, input, 0,
+                                  NULL, NULL);
   if (cl_err != CL_SUCCESS)
     return cl_err;
-  cl_err = reorder(&specout, &specin, &b, commands, reorder_kernel, bins);
+  cl_err =
+      reorder(&spec1, &in1, &b, wp * bins, commands1, reorder_kernel1, bins);
   if (cl_err != CL_SUCCESS)
     return cl_err;
-  cl_err = fft(&specout, &w[0], bins, commands, fft_kernel, bins >> 1);
+  cl_err =
+      fft(&spec1, &w[0], bins, wp * bins, commands1, fft_kernel1, bins >> 1);
   if (cl_err != CL_SUCCESS)
     return cl_err;
-  cl_err = real_cmplx(&specout, &w2[0], bins, commands, r2c_kernel, bins >> 1);
-  if (cl_err != CL_SUCCESS)
-    return cl_err;
-  cl_err = clEnqueueCopyBuffer(commands, specout, in, 0, bytes * wp, bytes, 0,
-                               NULL, NULL);
+  cl_err = real_cmplx(&spec1, &w2[0], bins, wp * bins, commands1, r2c_kernel1,
+                      bins >> 1);
   if (cl_err != CL_SUCCESS)
     return cl_err;
   wp = wp != nparts - 1 ? wp + 1 : 0;
-  cl_err = convol(&specin, &in, &coefs, wp, bins, nparts, commands,
+  cl_err = convol(&in1, &spec1, &spec2, wp, bins, nparts, commands1,
                   convol_kernel, bsize);
   if (cl_err != CL_SUCCESS)
     return cl_err;
-  cl_err = real_cmplx(&specin, &w2[1], bins, commands, c2r_kernel, bins >> 1);
+  cl_err = cmplx_real(&in1, &w2[1], bins, commands1, c2r_kernel, bins >> 1);
   if (cl_err != CL_SUCCESS)
     return cl_err;
-  cl_err = reorder(&specout, &specin, &b, commands, reorder_kernel, bins);
+  cl_err = reorder(&out, &in1, &b, 0, commands1, reorder_kernel1, bins);
   if (cl_err != CL_SUCCESS)
     return cl_err;
-  cl_err = fft(&specout, &w[1], bins, commands, fft_kernel, bins >> 1);
+  cl_err = fft(&out, &w[1], bins, 0, commands1, fft_kernel1, bins >> 1);
   if (cl_err != CL_SUCCESS)
     return cl_err;
-  cl_err = olap(&buff, &specout, bins, commands, olap_kernel, bins);
+  cl_err = ola(&olap, &out, bins, commands1, olap_kernel, bins);
   if (cl_err != CL_SUCCESS)
     return cl_err;
   if (!host_mem)
-    cl_err = clEnqueueReadBuffer(commands, buff, CL_TRUE, 0, bytes >> 1, output,
-                                 0, NULL, NULL);
+    cl_err = clEnqueueReadBuffer(commands1, olap, CL_TRUE, 0, bytes >> 1,
+                                 output, 0, NULL, NULL);
   return cl_err;
 }
 
 int Clpconv::convolution(float *output, float *input1, float *input2) {
   size_t bytes = sizeof(cl_float2) * bins;
   if (!host_mem)
-    cl_err = clEnqueueWriteBuffer(commands, specin, CL_TRUE, 0, bytes >> 1,
-                                  input1, 0, NULL, NULL);
+    cl_err = clEnqueueWriteBuffer(commands1, in1, 0, 0, bytes >> 1, input1, 0,
+                                  NULL, NULL);
   if (cl_err != CL_SUCCESS)
     return cl_err;
   if (!host_mem)
-    cl_err = clEnqueueWriteBuffer(commands1, specin1, CL_TRUE, 0, bytes >> 1,
-                                  input2, 0, NULL, NULL);
-  if (cl_err != CL_SUCCESS)
-    return cl_err;
-  cl_err = reorder(&specout, &specin, &b, commands, reorder_kernel, bins);
-  if (cl_err != CL_SUCCESS)
-    return cl_err;
-  cl_err = reorder(&specout1, &specin1, &b, commands1, reorder_kernel1, bins);
-  if (cl_err != CL_SUCCESS)
-    return cl_err;
-  cl_err = fft(&specout, &w[0], bins, commands, fft_kernel, bins >> 1);
-  if (cl_err != CL_SUCCESS)
-    return cl_err;
-  cl_err = fft(&specout1, &w[0], bins, commands1, fft_kernel1, bins >> 1);
-  if (cl_err != CL_SUCCESS)
-    return cl_err;
-  cl_err = real_cmplx(&specout, &w2[0], bins, commands, r2c_kernel, bins >> 1);
+    cl_err = clEnqueueWriteBuffer(commands2, in2, 0, 0, bytes >> 1, input2, 0,
+                                  NULL, NULL);
   if (cl_err != CL_SUCCESS)
     return cl_err;
   cl_err =
-      real_cmplx(&specout1, &w2[0], bins, commands1, r2c_kernel1, bins >> 1);
+      reorder(&spec1, &in1, &b, wp * bins, commands1, reorder_kernel1, bins);
   if (cl_err != CL_SUCCESS)
     return cl_err;
-  cl_err = clEnqueueCopyBuffer(commands, specout, in, 0, bytes * wp, bytes, 0,
-                               NULL, NULL);
+  cl_err =
+      reorder(&spec2, &in2, &b, wp2 * bins, commands2, reorder_kernel2, bins);
+  if (cl_err != CL_SUCCESS)
+    return cl_err;
+  cl_err =
+      fft(&spec1, &w[0], bins, wp * bins, commands1, fft_kernel1, bins >> 1);
+  if (cl_err != CL_SUCCESS)
+    return cl_err;
+  cl_err =
+      fft(&spec2, &w[0], bins, wp2 * bins, commands2, fft_kernel2, bins >> 1);
+  if (cl_err != CL_SUCCESS)
+    return cl_err;
+  cl_err = real_cmplx(&spec1, &w2[0], bins, wp * bins, commands1, r2c_kernel1,
+                      bins >> 1);
+  if (cl_err != CL_SUCCESS)
+    return cl_err;
+  cl_err = real_cmplx(&spec2, &w2[0], bins, wp2 * bins, commands2, r2c_kernel2,
+                      bins >> 1);
   if (cl_err != CL_SUCCESS)
     return cl_err;
   wp = wp != nparts - 1 ? wp + 1 : 0;
-  cl_err = clEnqueueCopyBuffer(commands1, specout1, coefs, 0, bytes * wp2,
-                               bytes, 0, NULL, NULL);
-  if (cl_err != CL_SUCCESS)
-    return cl_err;
   wp2 = wp2 == 0 ? nparts - 1 : wp2 - 1;
-  cl_err = convol(&specin, &in, &coefs, wp, bins, nparts, commands,
+  clFinish(commands2);
+  cl_err = convol(&in1, &spec1, &spec2, wp, bins, nparts, commands1,
                   convol_kernel, bsize);
   if (cl_err != CL_SUCCESS)
     return cl_err;
-  cl_err = real_cmplx(&specin, &w2[1], bins, commands, c2r_kernel, bins >> 1);
+  cl_err = cmplx_real(&in1, &w2[1], bins, commands1, c2r_kernel, bins >> 1);
   if (cl_err != CL_SUCCESS)
     return cl_err;
-  cl_err = reorder(&specout, &specin, &b, commands, reorder_kernel, bins);
+  cl_err = reorder(&out, &in1, &b, 0, commands1, reorder_kernel1, bins);
   if (cl_err != CL_SUCCESS)
     return cl_err;
-  cl_err = fft(&specout, &w[1], bins, commands, fft_kernel, bins >> 1);
+  cl_err = fft(&out, &w[1], bins, 0, commands1, fft_kernel1, bins >> 1);
   if (cl_err != CL_SUCCESS)
     return cl_err;
-  cl_err = olap(&buff, &specout, bins, commands, olap_kernel, bins);
+  cl_err = ola(&olap, &out, bins, commands1, olap_kernel, bins);
   if (cl_err != CL_SUCCESS)
     return cl_err;
   if (!host_mem)
-    cl_err = clEnqueueReadBuffer(commands, buff, CL_TRUE, 0, bytes >> 1, output,
-                                 0, NULL, NULL);
+    cl_err = clEnqueueReadBuffer(commands1, olap, CL_TRUE, 0, bytes >> 1,
+                                 output, 0, NULL, NULL);
   return cl_err;
 }
 }

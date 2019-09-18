@@ -47,15 +47,17 @@ inline void AtomicAdd(volatile __global float *source, const float operand) {
        prevVal.intVal, newVal.intVal) != prevVal.intVal);
 }
 /* data reordering */
-inline void reorder(global cmplx *out, global cmplx *in, global const int *b) {
+kernel void reorder(global cmplx *out, global cmplx *in, global const int *b, int offs) {
    int k = get_global_id(0);
+   out += offs;
    out[k] = in[b[k]]; 
    in[b[k]] = 0.f;
 }
 /* fft stage  */
-inline void fft(global cmplx *s, global const cmplx *w, int N, int n2) {
+kernel void fft(global cmplx *s, global const cmplx *w, int N, int n2, int offs) {
  int k, i, m, n;
  cmplx e, o;
+ s += offs;
  k = get_global_id(0)*n2;
  m = k/N; 
  n = n2 >> 1;
@@ -67,7 +69,7 @@ inline void fft(global cmplx *s, global const cmplx *w, int N, int n2) {
  s[i] = e - o;  
 }
 /* rfft conversion */
-inline void r2c(global cmplx *c, global const cmplx *w, int N) {
+kernel void r2c(global cmplx *c, global const cmplx *w, int N, int offs) {
   int i = get_global_id(0);
   if(!i) {
    c[0] = (cmplx) ((c[0].x + c[0].y)*.5f, (c[0].x - c[0].y)*.5f);
@@ -75,38 +77,12 @@ inline void r2c(global cmplx *c, global const cmplx *w, int N) {
   }
   int j = N - i;
   cmplx e, o, cj = conjg(c[j]), p;
+  c += offs;
   e = .5f*(c[i] + cj);
   o = .5f*rot(cj - c[i]);
   p = prod(w[i], o); 
   c[i] = e + p;
   c[j] = conjg(e - p);
-}
-/* TWO of each reorder, fft and r2c kernels for task parallelism
-   NB: this seems to be required for certain OpenCL implementations,
-   when using the same kernel on two concurrent queues.
-   There is nothing in the documentation indicating one way or another
-*/
-kernel void reorder_1(global cmplx *out, global cmplx *in, 
-                      global const int *b, int offs) {
-   reorder(out + offs, in, b);
-}
-kernel void reorder_2(global cmplx *out, global cmplx *in, 
-                      global const int *b, int offs) {
-   reorder(out + offs, in, b);
-}
-kernel void fft_1(global cmplx *s, global const cmplx *w, int N, int n2, 
-                  int offs) {
-  fft(s + offs, w, N, n2); 
-}
-kernel void fft_2(global cmplx *s, global const cmplx *w, int N, int n2, 
-                  int offs) {
-  fft(s + offs, w, N, n2); 
-}
-kernel void r2c_1(global cmplx *c, global const cmplx *w, int N, int offs) {
-  r2c(c + offs, w, N);
-}
-kernel void r2c_2(global cmplx *c, global const cmplx *w, int N, int offs) {
-  r2c(c + offs, w, N);
 }
 /* inverse rfft conversion */
 kernel void c2r(global cmplx *c, global const cmplx *w, int N) {
@@ -269,22 +245,23 @@ Clpconv::Clpconv(cl_device_id device_id, int cvs, int pts,
     return;
   }
 
-  reorder_kernel1 = clCreateKernel(program, "reorder_1", &cl_err);
+  /* separate kernel objects for each command queue*/
+  reorder_kernel1 = clCreateKernel(program, "reorder", &cl_err);
   if (cl_err != 0)
     err(cl_error_string(cl_err), userData);
-  fft_kernel1 = clCreateKernel(program, "fft_1", &cl_err);
+  fft_kernel1 = clCreateKernel(program, "fft", &cl_err);
   if (cl_err != 0)
     err(cl_error_string(cl_err), userData);
-  r2c_kernel1 = clCreateKernel(program, "r2c_1", &cl_err);
+  r2c_kernel1 = clCreateKernel(program, "r2c", &cl_err);
   if (cl_err != 0)
     err(cl_error_string(cl_err), userData);
-  reorder_kernel2 = clCreateKernel(program, "reorder_2", &cl_err);
+  reorder_kernel2 = clCreateKernel(program, "reorder", &cl_err);
   if (cl_err != 0)
     err(cl_error_string(cl_err), userData);
-  fft_kernel2 = clCreateKernel(program, "fft_2", &cl_err);
+  fft_kernel2 = clCreateKernel(program, "fft", &cl_err);
   if (cl_err != 0)
     err(cl_error_string(cl_err), userData);
-  r2c_kernel2 = clCreateKernel(program, "r2c_2", &cl_err);
+  r2c_kernel2 = clCreateKernel(program, "r2c", &cl_err);
   if (cl_err != 0)
     err(cl_error_string(cl_err), userData);
   c2r_kernel = clCreateKernel(program, "c2r", &cl_err);

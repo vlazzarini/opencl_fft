@@ -23,7 +23,6 @@
 #include <cl_conv.h>
 #include <cl_dconv.h>
 #include <modload.h>
-#include <plugin.h>
 #include <vector>
 
 namespace csnd {
@@ -71,7 +70,6 @@ struct Conv : Plugin<1, 6> {
           bufout.allocate(csound, ksmps);
           bufin.allocate(csound, ksmps);
           cnt = 0;
-          csound->plugin_deinit(this);
           return OK;
         }
         csound->message("error setting impulse response");
@@ -87,7 +85,6 @@ struct Conv : Plugin<1, 6> {
           bufout.allocate(csound, parts);
           bufin.allocate(csound, parts);
           cnt = 0;
-          csound->plugin_deinit(this);
           return OK;
         }
         csound->message("error setting impulse response");
@@ -163,7 +160,6 @@ struct TVConv : Plugin<1, 7> {
         bufin1.allocate(csound, ksmps);
         bufin2.allocate(csound, ksmps);
         cnt = 0;
-        csound->plugin_deinit(this);
         return OK;
       }
       delete cldconv;
@@ -174,7 +170,6 @@ struct TVConv : Plugin<1, 7> {
         bufout.allocate(csound, parts);
         bufin1.allocate(csound, parts);
         bufin2.allocate(csound, parts);
-        csound->plugin_deinit(this);
         return OK;
       }
       delete clpconv;

@@ -1,6 +1,5 @@
 <CsoundSynthesizer>
 <CsOptions>
---opcode-lib=./libclconv.dylib -n
 </CsOptions>
 <CsInstruments>
 ksmps = 64

@@ -7,15 +7,15 @@ set(CMAKE_VERBOSE_MAKEFILE 1)
 set(SRCS cl_conv.cpp cl_dconv.cpp)
 find_package(OpenCL REQUIRED )
 
-add_library(libcl_conv SHARED ${SRCS})
+add_library(cl_conv SHARED ${SRCS})
 
 if(APPLE)
-target_link_libraries(libcl_conv "-framework OpenCL")
+target_link_libraries(cl_conv "-framework OpenCL")
 else()
-target_link_libraries(libcl_conv OpenCL)
+target_link_libraries(cl_conv OpenCL)
 endif()
 
-set_property(TARGET libcl_conv PROPERTY CXX_STANDARD 14)
+set_property(TARGET cl_conv PROPERTY CXX_STANDARD 14)
 
 add_subdirectory(csound)
 

@@ -96,6 +96,63 @@ namespace csnd {
 
   };
 
+   struct Rfft : Plugin<1,3> {
+    
+    cl_fft::Clrfft *dft;
+    csnd::AuxMem<float> buf;
+    
+    int init() {
+        int err;
+        cl_device_id device_ids[32], id;
+        cl_uint num = 0;
+        char name[128];
+        Vector<MYFLT> input = inargs.vector_data<MYFLT>(0);
+        Vector<MYFLT> output = outargs.vector_data<MYFLT>(0);
+        output.init(csound, input.len(), this->insdshead);
+
+        err = clGetDeviceIDs(NULL, CL_DEVICE_TYPE_ALL, 32, device_ids, &num);
+        if (err != CL_SUCCESS)
+          return csound->init_error("failed to find an OpenCL device!\n");
+        id = device_ids[(int)inargs[2]];
+        clGetDeviceInfo(id, CL_DEVICE_NAME, 128, name, NULL);
+        csound->message("using device: ");
+        csound->message(name);
+        dft = new cl_fft::Clrfft(id, np2(input.len()), inargs[1] ? true : false);
+        if ((err = dft->get_error()) > 0) 
+          return csound->init_error(cl_fft::cl_error_string(err));
+        buf.allocate(csound, input.len());
+        return OK;
+     }
+
+     int perf() {
+        int err;
+        Vector<MYFLT> input = inargs.vector_data<MYFLT>(0);
+        Vector<MYFLT> output = outargs.vector_data<MYFLT>(0);
+        std::complex<float> *data =
+          reinterpret_cast<std::complex<float>*>(buf.data());
+
+        for(auto s : input)
+          buf[i] = s;
+        
+        err = dft->transform(data);
+
+        if ((err = dft->get_error()) > 0) 
+          return csound->perf_error(cl_fft::cl_error_string(err), this);
+
+         for(auto &s : output)
+           s = buf[i];
+    
+        return OK;
+      }
+
+      int deinit() {
+        delete dft;
+        return OK;
+      }
+
+  };
+  
+
   
   struct Conv : Plugin<1, 6> {
     cl_conv::Clpconv *clpconv;
@@ -289,5 +346,6 @@ namespace csnd {
     plugin<Conv>(csound, "clconv", "a", "aiiioo", csnd::thread::ia);
     plugin<TVConv>(csound, "cltvconv", "a", "aakkiii", csnd::thread::ia);
     plugin<Cfft>(csound, "clfft", "k[]", "k[]ii", csnd::thread::ik);
+    plugin<Rfft>(csound, "clrfft", "k[]", "k[]ii", csnd::thread::ik);
   }
 }

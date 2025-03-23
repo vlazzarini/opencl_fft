@@ -13,14 +13,14 @@
 #include <iostream>
 #include <vector>
 
-#define DEVID 1
+#define DEVID 0
 #define N 16
 
 using namespace cl_fft;
 
 int main() {
   int err;
-  cl_device_id device_ids[32], device_id;
+  cl_device_id device_ids[32];
   cl_uint num = 0, nump = 0;
   cl_platform_id platforms[16];
   char name[128];
@@ -36,13 +36,13 @@ int main() {
   clGetDeviceInfo(device_ids[DEVID], CL_DEVICE_NAME, 128, name, NULL);
   std::cout << "using device " << DEVID << ":" << name << std::endl;
 
-  Clrfft dft(device_ids[1], N, true);
+  Clrfft dft(device_ids[DEVID], N, true);
   if ((err = dft.get_error()) > 0) {
     std::cout << cl_error_string(err) << std::endl;
     return 1;
   }
 
-  Clrfft idft(device_ids[1], N, false);
+  Clrfft idft(device_ids[DEVID], N, false);
   if ((err = idft.get_error()) > 0) {
     std::cout << cl_error_string(err) << std::endl;
     return 1;

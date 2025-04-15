@@ -198,6 +198,7 @@ namespace csnd {
           csound->message("error setting impulse response");
         }
         delete cldconv;
+        cldconv = NULL;
       } else {
         clpconv = new cl_conv::Clpconv(id, size, parts, err_msg, (void *)csound);
         if (clpconv->get_cl_err() == CL_SUCCESS) {
@@ -213,15 +214,15 @@ namespace csnd {
           csound->message("error setting impulse response");
         }
         delete clpconv;
+        clpconv = NULL;
       }
       return csound->init_error("error initialising opencl object");
     }
 
     int deinit() {
-      if (dconv)
-        delete cldconv;
-      else
-        delete clpconv;
+      if (dconv && cldconv) 
+       delete cldconv;
+      else if(clpconv) delete clpconv;
       return OK;
     }
 
@@ -286,6 +287,7 @@ namespace csnd {
           return OK;
         }
         delete cldconv;
+        cldconv = NULL;
       } else {
         clpconv = new cl_conv::Clpconv(id, size, parts, err_msg, (void *)csound);
         if (clpconv->get_cl_err() == CL_SUCCESS) {
@@ -296,15 +298,15 @@ namespace csnd {
           return OK;
         }
         delete clpconv;
+        clpconv = NULL;
       }
       return csound->init_error("error initialising opencl object");
     }
 
     int deinit() {
-      if (dconv)
-        delete cldconv;
-      else
-        delete clpconv;
+      if (dconv && cldconv) 
+       delete cldconv;
+      else if(clpconv) delete clpconv;
       return OK;
     }
 

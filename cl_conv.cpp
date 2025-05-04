@@ -71,13 +71,13 @@ kernel void fft(global cmplx *s, global const cmplx *w, int N, int n2, int offs)
 /* rfft conversion */
 kernel void r2c(global cmplx *c, global const cmplx *w, int N, int offs) {
   int i = get_global_id(0);
-  if(!i) {
+  int j = N - i;
+  c += offs;
+  if(!i%N) {
    c[0] = (cmplx) ((c[0].x + c[0].y)*.5f, (c[0].x - c[0].y)*.5f);
    return;
   }
-  int j = N - i;
   cmplx e, o, cj = conjg(c[j]), p;
-  c += offs;
   e = .5f*(c[i] + cj);
   o = .5f*rot(cj - c[i]);
   p = prod(w[i], o); 

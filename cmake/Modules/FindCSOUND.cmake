@@ -29,11 +29,27 @@ if(APPLE)
             /Library/Frameworks/CsoundLib.framework
             ${CSOUND_FRAMEWORK32_DIR_HINT}
     )
+
+    find_path(CS_VERSION_7 Versions/7.0
+             HINTS
+            "$ENV{HOME}/Library/Frameworks/CsoundLib64.framework"
+            "$ENV{HOME}/Library/Frameworks/CsoundLib.framework"
+            /Library/Frameworks/CsoundLib64.framework
+            /Library/Frameworks/CsoundLib.framework
+            ${CSOUND_FRAMEWORK32_DIR_HINT})
+            
+    if(CS_VERSION_7)
+      set(CSOUND_VERSION 7)
+    else()
+      set(CSOUND_VERSION 6)
+    endif()
+
 else()
     find_path(CSOUND_INCLUDE_DIR csound.h
         PATH_SUFFIXES csound
         HINTS ${CSOUND_INCLUDE_DIR_HINT}
     )
+    set(CSOUND_VERSION 7)
 endif()
 
 if(APPLE)

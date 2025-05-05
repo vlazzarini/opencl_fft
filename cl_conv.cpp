@@ -16,23 +16,22 @@ namespace cl_conv {
 
   const double PI = M_PI;
 
-    /* OpenCL kernels for all compute operations */
+  /* OpenCL kernels for all compute operations */
   const char *pconvcode = R"(
-   #include cl_conv_kernels.h
+   #include "cl_conv_kernels.h"
   )";
 
   /**  kernel dispatch functions 
        these wrap the kernel arg setting and enqueue calls
        for convenience
-  */
-
-  /** Reordering dispatcher
-      Used to re-order the data in the fft input array
-      via byte-swapped indices stored in the b array
-      offs parameter allows access to multiple output
-      analysis frames - for overlap-add, partitioned convolution
-      NB: on forward fft, real data is taken in and 
-      re-interpreted as a complex array (as per rfft convention)
+ 
+       Reordering dispatcher
+       Used to re-order the data in the fft input array
+       via byte-swapped indices stored in the b array
+       offs parameter allows access to multiple output
+       analysis frames - for overlap-add, partitioned convolution
+       NB: on forward fft, real data is taken in and 
+       re-interpreted as a complex array (as per rfft convention)
   */
   inline int reorder(cl_mem *out, cl_mem *in, cl_mem *b, int offs,
                      cl_command_queue commands, cl_kernel kern, size_t threads) {

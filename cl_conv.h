@@ -151,6 +151,7 @@ public:
       pts - partition size \n
       errs - error message callback \n
       uData - callback user data \n
+      in1, in2, out - host-allocated arrays (optional)
   */
   Clpconv(cl_device_id device_id, int cvs, int pts,
           void (*errs)(std::string s, void *d) = NULL, void *uData = NULL,
@@ -166,18 +167,18 @@ public:
   int push_ir(float *ir);
 
   /** Convolution computation
-      output - output array (partition size samples) \n
-      input - input array (partition size * 2, but
-        holding only partition size samples, zero-padded to
-        partition length)  \n
+      output - output array (partition-size samples) \n
+      input - input array   \n
+
   */
   int convolution(float *output, float *input);
 
   /** Time-varying convolution computation
       output - output array (partition size samples) \n
-      input1, input2 - input arrays (partition size * 2, but
-        holding only partition size samples, zero-padded to
-        partition length)  \n
+      input1, input2 - input arrays \n
+      NB: if input arrays are held by the host, they
+      need to have 2*partition size floats, but
+      only filled with partition-size samples   \n
   */
   int convolution(float *output, float *input1, float *input2);
 

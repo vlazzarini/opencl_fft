@@ -9,6 +9,8 @@
 //
 ////////////////////////////////////////////////////////////////////////////////
 
+
+const char *pconvcode = R"(  
 /* complex type */
 typedef float2 cmplx;
 /* complex product */
@@ -120,3 +122,4 @@ kernel void olap(global float *buf, global const float *in, int parts){
   buf[n] = (in[n] + buf[parts+n])/parts;
   buf[parts+n] = in[parts+n];
 }
+)";

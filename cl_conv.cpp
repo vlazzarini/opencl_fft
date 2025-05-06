@@ -12,14 +12,14 @@
 #include <vector>
 #include <cmath>
 
+#define OPENQ const char *pconvcode = R"(
+#define CLOSEQ   )";
+
 namespace cl_conv {
 
   const double PI = M_PI;
-
-  /* OpenCL kernels for all compute operations */
-  const char *pconvcode = R"(
-   #include "cl_conv_kernels.h"
-  )";
+  
+#include "cl_conv_kernels.h"  
 
   /**  kernel dispatch functions 
        these wrap the kernel arg setting and enqueue calls
